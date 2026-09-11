@@ -33,6 +33,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </header>
           {children}
           <footer className="mt-12 border-t border-ink-600 pt-4 text-center text-xs text-zinc-500">
+            <div className="mb-3 flex flex-col items-center gap-2">
+              <img
+                src="/ape-avatar.png"
+                alt="VViIIis.eth"
+                className="h-12 w-12 rounded-full border border-ink-600 object-cover"
+              />
+              <p>
+                Built by{" "}
+                <span className="font-semibold text-zinc-300">VViIIis.eth</span> — like the site?
+                Tip a banana 🍌{" "}
+                <span className="font-mono text-zinc-300">VViIIis.eth</span>
+              </p>
+            </div>
             Unofficial fan project. Not affiliated with SBS / Spoiled Banana Society. Data sourced
             from sbsfantasy.com&rsquo;s public leaderboard and the Banana Best Ball NFT collection
             on OpenSea.
