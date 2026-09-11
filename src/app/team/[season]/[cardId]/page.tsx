@@ -52,7 +52,11 @@ export default async function TeamPage({
       openseaUrl = nft.opensea_url ?? null;
       rank = traitValue(nft, "RANK");
     }
-  } catch {
+  } catch (err) {
+    // Logged server-side (visible in Vercel's Logs tab) so a real cause
+    // (missing/invalid API key, rate limit, network error) is diagnosable —
+    // the user-facing message below stays generic on purpose.
+    console.error("[team page] OpenSea live roster fetch failed:", err);
     liveFetchFailed = true;
   }
 
