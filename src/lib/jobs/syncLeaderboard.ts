@@ -72,73 +72,103 @@ export async function runSyncLeaderboard() {
     }
     log(`[sync] profiles fetched, writing ${rows.length} rows to DB...`);
 
-    let written = 0;
+    // Writing was previously one row at a time (3 sequential round-trips
+    // each) — fine on a low-latency local connection, but ~1500 sequential
+    // round-trips to a remote pooler from a CI runner is what was actually
+    // slow, not a hang. Batch it instead: owners first (de-duped by wallet,
+    // since a wallet can own several teams and we don't want two concurrent
+    // upserts racing on the same owner row), then team+score rows in
+    // parallel batches (safe to parallelize — `rows` is already de-duped by
+    // cardId, so no two batched writes ever target the same team/score row).
+    const WRITE_BATCH = 15;
+
+    const ownersByWallet = new Map<string, (typeof rows)[number]>();
     for (const row of rows) {
-      const parsed = parseTeamName(row.teamName);
-      if (!parsed.cardId) continue;
-      const cardId = parsed.cardId;
-      const leaguePrefix = parsed.leaguePrefix;
-      const profile = profiles[row.ownerWallet];
+      if (!ownersByWallet.has(row.ownerWallet)) ownersByWallet.set(row.ownerWallet, row);
+    }
+    const uniqueOwners = [...ownersByWallet.values()];
 
-      await prisma.owner.upsert({
-        where: { wallet: row.ownerWallet },
-        create: {
-          wallet: row.ownerWallet,
-          displayName: profile?.displayName ?? row.username,
-          imageUrl: profile?.imageUrl ?? null,
-          equippedBadge: profile?.equippedBadge ?? null,
-          ripenessTier: profile?.ripeness?.tier ?? null,
-          ripenessLabel: profile?.ripeness?.label ?? null,
-          ripenessCount: profile?.ripeness?.count ?? null,
-        },
-        update: {
-          displayName: profile?.displayName ?? row.username,
-          imageUrl: profile?.imageUrl ?? null,
-          equippedBadge: profile?.equippedBadge ?? null,
-          ripenessTier: profile?.ripeness?.tier ?? null,
-          ripenessLabel: profile?.ripeness?.label ?? null,
-          ripenessCount: profile?.ripeness?.count ?? null,
-        },
-      });
+    for (let i = 0; i < uniqueOwners.length; i += WRITE_BATCH) {
+      const batch = uniqueOwners.slice(i, i + WRITE_BATCH);
+      await Promise.all(
+        batch.map((row) => {
+          const profile = profiles[row.ownerWallet];
+          return prisma.owner.upsert({
+            where: { wallet: row.ownerWallet },
+            create: {
+              wallet: row.ownerWallet,
+              displayName: profile?.displayName ?? row.username,
+              imageUrl: profile?.imageUrl ?? null,
+              equippedBadge: profile?.equippedBadge ?? null,
+              ripenessTier: profile?.ripeness?.tier ?? null,
+              ripenessLabel: profile?.ripeness?.label ?? null,
+              ripenessCount: profile?.ripeness?.count ?? null,
+            },
+            update: {
+              displayName: profile?.displayName ?? row.username,
+              imageUrl: profile?.imageUrl ?? null,
+              equippedBadge: profile?.equippedBadge ?? null,
+              ripenessTier: profile?.ripeness?.tier ?? null,
+              ripenessLabel: profile?.ripeness?.label ?? null,
+              ripenessCount: profile?.ripeness?.count ?? null,
+            },
+          });
+        })
+      );
+    }
+    log(`[sync] wrote ${uniqueOwners.length} owners, writing team + score rows...`);
 
-      await prisma.team.upsert({
-        where: { seasonSlug_cardId: { seasonSlug: season.slug, cardId } },
-        create: {
-          cardId,
-          seasonSlug: season.slug,
-          leagueId: row.leagueId,
-          leagueName: leaguePrefix,
-          level: row.level,
-          ownerWallet: row.ownerWallet,
-        },
-        update: {
-          leagueId: row.leagueId,
-          leagueName: leaguePrefix,
-          level: row.level,
-          ownerWallet: row.ownerWallet,
-        },
-      });
+    let written = 0;
+    for (let i = 0; i < rows.length; i += WRITE_BATCH) {
+      const batch = rows.slice(i, i + WRITE_BATCH);
+      await Promise.all(
+        batch.map(async (row) => {
+          const parsed = parseTeamName(row.teamName);
+          if (!parsed.cardId) return;
+          const cardId = parsed.cardId;
+          const leaguePrefix = parsed.leaguePrefix;
 
-      await prisma.scoreSnapshot.upsert({
-        where: {
-          seasonSlug_teamCardId_gameweek: { seasonSlug: season.slug, teamCardId: cardId, gameweek },
-        },
-        create: {
-          seasonSlug: season.slug,
-          teamCardId: cardId,
-          gameweek,
-          rank: row.rank,
-          weeklyScore: row.weeklyScore,
-          seasonScore: row.seasonScore,
-        },
-        update: {
-          rank: row.rank,
-          weeklyScore: row.weeklyScore,
-          seasonScore: row.seasonScore,
-        },
-      });
+          await prisma.team.upsert({
+            where: { seasonSlug_cardId: { seasonSlug: season.slug, cardId } },
+            create: {
+              cardId,
+              seasonSlug: season.slug,
+              leagueId: row.leagueId,
+              leagueName: leaguePrefix,
+              level: row.level,
+              ownerWallet: row.ownerWallet,
+            },
+            update: {
+              leagueId: row.leagueId,
+              leagueName: leaguePrefix,
+              level: row.level,
+              ownerWallet: row.ownerWallet,
+            },
+          });
 
-      written++;
+          await prisma.scoreSnapshot.upsert({
+            where: {
+              seasonSlug_teamCardId_gameweek: { seasonSlug: season.slug, teamCardId: cardId, gameweek },
+            },
+            create: {
+              seasonSlug: season.slug,
+              teamCardId: cardId,
+              gameweek,
+              rank: row.rank,
+              weeklyScore: row.weeklyScore,
+              seasonScore: row.seasonScore,
+            },
+            update: {
+              rank: row.rank,
+              weeklyScore: row.weeklyScore,
+              seasonScore: row.seasonScore,
+            },
+          });
+
+          written++;
+        })
+      );
+      log(`[sync] wrote ${Math.min(i + WRITE_BATCH, rows.length)}/${rows.length} team+score rows...`);
     }
 
     log(`[sync] wrote ${written} rows, finalizing sync log...`);

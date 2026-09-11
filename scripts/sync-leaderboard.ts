@@ -12,7 +12,7 @@ import { runSyncLeaderboard } from "../src/lib/jobs/syncLeaderboard";
 // a stalled API call) with no error and no timeout of its own, this forces
 // a loud, fast failure instead of the job silently running for hours (and
 // burning GitHub Actions minutes) with nothing in the log.
-const WATCHDOG_MS = 60000;
+const WATCHDOG_MS = 240000;
 const watchdog = setTimeout(() => {
   writeSync(2, `[sync-leaderboard] WATCHDOG: still running after ${WATCHDOG_MS}ms, forcing exit\n`);
   process.exit(1);
