@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "postinstall": "prisma generate",
     "sync:leaderboard": "tsx scripts/sync-leaderboard.ts",
     "sync:collection": "tsx scripts/sync-collection.ts",
     "sync:all": "npm run sync:leaderboard && npm run sync:collection",

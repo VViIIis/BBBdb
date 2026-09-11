@@ -1,5 +1,15 @@
+import { writeSync } from "fs";
 import { prisma } from "@/lib/db";
 import { getCurrentGameweek, getLeaderboard, getUserProfiles, parseTeamName } from "@/lib/sbsApi";
+
+// Plain console.log can sit in an unflushed buffer when stdout is piped (as
+// it is under GitHub Actions / most CI), so if the process later hangs and
+// gets killed, buffered lines never make it to the log — making a hang look
+// like "zero output" even though the code ran well past the log call.
+// writeSync bypasses that buffering for these diagnostic checkpoints.
+function log(msg: string) {
+  writeSync(1, `${msg}\n`);
+}
 
 /**
  * Core sync logic, shared by scripts/sync-leaderboard.ts (manual / GitHub
@@ -13,25 +23,38 @@ import { getCurrentGameweek, getLeaderboard, getUserProfiles, parseTeamName } fr
  * when a new season goes live later, flip that flag and this keeps working
  * with no code change.
  */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`[sync] TIMEOUT after ${ms}ms waiting on: ${label}`)), ms)
+    ),
+  ]);
+}
+
 export async function runSyncLeaderboard() {
-  console.log("[sync] looking up active season...");
-  const season = await prisma.season.findFirst({ where: { isActive: true } });
+  log("[sync] looking up active season...");
+  const season = await withTimeout(
+    prisma.season.findFirst({ where: { isActive: true } }),
+    15000,
+    "prisma.season.findFirst (initial DB connection)"
+  );
   if (!season) {
     throw new Error("No active season found — seed a Season row with isActive=true first.");
   }
-  console.log(`[sync] season: ${season.slug}`);
+  log(`[sync] season: ${season.slug}`);
 
-  const log = await prisma.syncLog.create({ data: { source: "sbs-leaderboard" } });
-  console.log("[sync] sync log row created, fetching current gameweek...");
+  const syncLogRow = await prisma.syncLog.create({ data: { source: "sbs-leaderboard" } });
+  log("[sync] sync log row created, fetching current gameweek...");
   try {
     const gameweek = await getCurrentGameweek();
-    console.log(`[sync] gameweek: ${gameweek}, fetching leaderboard...`);
+    log(`[sync] gameweek: ${gameweek}, fetching leaderboard...`);
 
     const [bySeason, byWeekly] = await Promise.all([
       getLeaderboard(gameweek, "SeasonScore"),
       getLeaderboard(gameweek, "WeeklyScore"),
     ]);
-    console.log(`[sync] fetched ${bySeason.length} season rows, ${byWeekly.length} weekly rows`);
+    log(`[sync] fetched ${bySeason.length} season rows, ${byWeekly.length} weekly rows`);
 
     const rowsByCardId = new Map<string, (typeof bySeason)[number]>();
     for (const row of [...bySeason, ...byWeekly]) {
@@ -41,13 +64,13 @@ export async function runSyncLeaderboard() {
     const rows = [...rowsByCardId.values()];
 
     const wallets = [...new Set(rows.map((r) => r.ownerWallet))];
-    console.log(`[sync] fetching profiles for ${wallets.length} wallets...`);
+    log(`[sync] fetching profiles for ${wallets.length} wallets...`);
     const profiles: Record<string, Awaited<ReturnType<typeof getUserProfiles>>[string]> = {};
     const BATCH = 50;
     for (let i = 0; i < wallets.length; i += BATCH) {
       Object.assign(profiles, await getUserProfiles(wallets.slice(i, i + BATCH)));
     }
-    console.log(`[sync] profiles fetched, writing ${rows.length} rows to DB...`);
+    log(`[sync] profiles fetched, writing ${rows.length} rows to DB...`);
 
     let written = 0;
     for (const row of rows) {
@@ -118,16 +141,16 @@ export async function runSyncLeaderboard() {
       written++;
     }
 
-    console.log(`[sync] wrote ${written} rows, finalizing sync log...`);
+    log(`[sync] wrote ${written} rows, finalizing sync log...`);
     await prisma.syncLog.update({
-      where: { id: log.id },
+      where: { id: syncLogRow.id },
       data: { finishedAt: new Date(), recordCount: written, ok: true },
     });
 
     return { gameweek, written };
   } catch (err) {
     await prisma.syncLog.update({
-      where: { id: log.id },
+      where: { id: syncLogRow.id },
       data: { finishedAt: new Date(), ok: false, errorText: String(err) },
     });
     throw err;
