@@ -136,10 +136,12 @@ last updated at ___" without needing an external monitoring tool.
   filterable by level (Pro / HOF / Jackpot / JackHOF / Founder), reading
   from your database (not a live call on every page load). A season switcher
   appears once more than one season exists.
-- **Owner portfolio** (`/owner/[wallet]`) — every known team for one wallet
-  **across all seasons** (not season-scoped — this is a wallet's whole
-  BBBdb history), with a Season column, highest-scoring team, and average
-  season points. Click any owner name on the leaderboard to get here.
+- **Owner portfolio** (`/owner/[wallet]`) — every known team for one wallet,
+  scoped to one season at a time (defaults to the currently-active season;
+  a season switcher lets you pick BBB III vs BBB IV, plus an "All-time" tab
+  for the wallet's whole combined BBBdb history), with highest-scoring team
+  and average season points for whatever's selected. Click any owner name
+  on the leaderboard to get here.
 - **Team/roster card** (`/team/[season]/[cardId]`) — one team's owner,
   level/status, full DB score history across every synced gameweek, and a
   best-effort live pull of its drafted roster slots + card image from

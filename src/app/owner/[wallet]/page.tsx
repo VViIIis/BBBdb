@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { getAllSeasons } from "@/lib/seasons";
 
 export const dynamic = "force-dynamic";
 
@@ -8,25 +9,42 @@ function shortWallet(wallet: string) {
   return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 }
 
-export default async function OwnerPage({ params }: { params: { wallet: string } }) {
+export default async function OwnerPage({
+  params,
+  searchParams,
+}: {
+  params: { wallet: string };
+  searchParams: { season?: string };
+}) {
   const wallet = params.wallet.toLowerCase();
 
-  // Owner is global across seasons on purpose — this page is a wallet's
-  // all-time portfolio, spanning every season it's held a team in.
-  const owner = await prisma.owner.findUnique({
-    where: { wallet },
-    include: {
-      teams: {
-        include: { season: true, scores: { orderBy: { capturedAt: "desc" }, take: 1 } },
+  const [owner, seasons] = await Promise.all([
+    prisma.owner.findUnique({
+      where: { wallet },
+      include: {
+        teams: {
+          include: { season: true, scores: { orderBy: { capturedAt: "desc" }, take: 1 } },
+        },
       },
-    },
-  });
+    }),
+    getAllSeasons(),
+  ]);
 
   if (!owner) notFound();
 
-  const teams = owner.teams
+  // Default to one season at a time (the currently-active one) rather than
+  // lumping every season together — different seasons have different scale
+  // and field size, so an all-time combined view reads as noise more often
+  // than it's useful. ?season=all opts back into the full history view.
+  const viewAll = searchParams.season === "all";
+  const activeSlug = seasons.find((s) => s.isActive)?.slug ?? seasons[0]?.slug;
+  const selectedSlug = viewAll ? null : (searchParams.season ?? activeSlug);
+
+  const allTeams = owner.teams
     .map((t) => ({ ...t, latest: t.scores[0] ?? null }))
     .sort((a, b) => (b.latest?.seasonScore ?? 0) - (a.latest?.seasonScore ?? 0));
+
+  const teams = selectedSlug ? allTeams.filter((t) => t.seasonSlug === selectedSlug) : allTeams;
 
   const scored = teams.filter((t) => t.latest);
   // `teams` is already sorted by season score desc (unscored teams sort to
@@ -52,6 +70,32 @@ export default async function OwnerPage({ params }: { params: { wallet: string }
           </Link>
         </div>
       </div>
+
+      {seasons.length > 1 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {seasons.map((s) => (
+            <Link
+              key={s.slug}
+              href={`/owner/${owner.wallet}?season=${encodeURIComponent(s.slug)}`}
+              className={`rounded-full px-3 py-1 text-sm ${
+                !viewAll && selectedSlug === s.slug
+                  ? "bg-banana-400 font-semibold text-ink-900"
+                  : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
+              }`}
+            >
+              {s.name}
+            </Link>
+          ))}
+          <Link
+            href={`/owner/${owner.wallet}?season=all`}
+            className={`rounded-full px-3 py-1 text-sm ${
+              viewAll ? "bg-banana-400 font-semibold text-ink-900" : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
+            }`}
+          >
+            All-time
+          </Link>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Teams" value={teams.length} />
@@ -82,7 +126,7 @@ export default async function OwnerPage({ params }: { params: { wallet: string }
         <table className="w-full min-w-[560px] text-left text-sm">
           <thead className="bg-ink-800 text-zinc-400">
             <tr>
-              <th className="px-3 py-2">Season</th>
+              {viewAll && <th className="px-3 py-2">Season</th>}
               <th className="px-3 py-2">Team</th>
               <th className="px-3 py-2">Level</th>
               <th className="px-3 py-2 text-right">Weekly</th>
@@ -92,7 +136,7 @@ export default async function OwnerPage({ params }: { params: { wallet: string }
           <tbody>
             {teams.map((t) => (
               <tr key={`${t.seasonSlug}-${t.cardId}`} className="border-t border-ink-600">
-                <td className="px-3 py-2 text-zinc-400">{t.season.name}</td>
+                {viewAll && <td className="px-3 py-2 text-zinc-400">{t.season.name}</td>}
                 <td className="px-3 py-2">
                   <Link href={`/team/${t.seasonSlug}/${t.cardId}`} className="hover:text-banana-400">
                     {t.leagueName} · #{t.cardId}
@@ -118,6 +162,13 @@ export default async function OwnerPage({ params }: { params: { wallet: string }
                 </td>
               </tr>
             ))}
+            {teams.length === 0 && (
+              <tr>
+                <td colSpan={viewAll ? 5 : 4} className="px-3 py-8 text-center text-zinc-500">
+                  No teams for this season.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
