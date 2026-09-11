@@ -1,0 +1,137 @@
+// SBS Banana Best Ball tracker — data model
+//
+// Design notes (see README.md "Data model" section for full rationale):
+// - Season   = one NFT collection/tournament (e.g. "bbb4" = Banana Best Ball
+//              IV, currently live on Base; "bbb3" = Banana Best Ball III, a
+//              concluded season on Ethereum mainnet). Added 2026-09-10 when
+//              we started importing BBB III as historical data — token ids
+//              are NOT globally unique (both collections start at 1), so
+//              every Team/ScoreSnapshot row is now scoped to a season.
+// - Owner    = one wallet address, GLOBAL across all seasons on purpose — a
+//              wallet can hold teams from multiple seasons, and its
+//              portfolio page shows all of them together.
+// - Team     = one drafted "card" WITHIN a season (seasonSlug + cardId
+//              matches the NFT token id used in team URLs like
+//              "BBB #687 · #7304" -> leagueName "BBB #687", cardId "7304",
+//              seasonSlug "bbb4"). Primary key is (seasonSlug, cardId), not
+//              cardId alone.
+// - ScoreSnapshot = one row per (team, gameweek) pull from the SBS
+//              leaderboard API for a LIVE season, or one final frozen
+//              snapshot (gameweek e.g. "bbb3-final") pulled from OpenSea's
+//              metadata for a CONCLUDED season we only imported after the
+//              fact. We keep history instead of overwriting so
+//              week-over-week charts and "advanced / eliminated" pod
+//              tracking are possible later.
+//
+// - RosterSlot = one drafted "Team Position" slot on a team (e.g. slot
+//              "WR2" -> value "CHI WR1"), added 2026-09-11 to back the
+//              exposure page. SBS teams draft team-positions, not real
+//              players (see FAQ notes below), so "value" — not a player
+//              name — is the unit exposure counts. Assumed immutable once
+//              drafted (same assumption src/app/team/[season]/[cardId]
+//              already makes for caching), so sync scripts insert-only
+//              (skip existing rows) instead of re-upserting every run.
+//
+// Levels observed on sbsfantasy.com: Pro (aka "BBB"), Hall of Fame ("HOF"),
+// Jackpot, JackHOF, Founder. Pod structure (see FAQ): weeks 1-14 cumulative in a
+// 10-team pod -> top 2 advance to a fresh week 15 pod -> top 2 advance to week 16
+// pod -> week 17 finals. HOF runs its own parallel 15-17 track. Jackpot winners
+// skip straight to finals. We store level/leagueId/leagueName as given by the API
+// rather than hard-coding pod math, since SBS may adjust the exact rules.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Season {
+  slug      String  @id // e.g. "bbb3", "bbb4" — used in URLs
+  name      String // e.g. "Banana Best Ball IV"
+  chain     String // "base" | "ethereum" — passed to the OpenSea client
+  contract  String // NFT contract address (lowercase)
+  isActive  Boolean @default(false) // true for the one currently-live season; controls the default season shown site-wide and which season scripts sync into when none is specified
+  teams     Team[]
+}
+
+model Owner {
+  wallet         String   @id
+  displayName    String?
+  imageUrl       String?
+  equippedBadge  String?
+  ripenessTier   Int?
+  ripenessLabel  String?
+  ripenessCount  Int?
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @updatedAt
+  teams          Team[]
+
+  @@index([displayName])
+}
+
+model Team {
+  cardId         String // NFT token id / SBS "card" id, e.g. "7304" — unique WITHIN a season only
+  seasonSlug     String   @default("bbb4")
+  season         Season   @relation(fields: [seasonSlug], references: [slug])
+  teamNumber     Int? // numeric team # shown on the card image, when known
+  leagueId       String // e.g. "2026-fast-draft-606" — groups teams into a pod
+  leagueName     String // e.g. "BBB #687"
+  level          String // "Pro" | "Hall of Fame" | "Jackpot" | "JackHOF" | "Founder"
+  ownerWallet    String
+  owner          Owner    @relation(fields: [ownerWallet], references: [wallet])
+  status         String   @default("active") // active | advanced | eliminated | finals | draft_pass
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @updatedAt
+  scores         ScoreSnapshot[]
+  rosterSlots    RosterSlot[]
+
+  @@id([seasonSlug, cardId])
+  @@index([ownerWallet])
+  @@index([leagueId])
+  @@index([level])
+  @@index([seasonSlug])
+}
+
+model RosterSlot {
+  id         String @id @default(cuid())
+  seasonSlug String
+  teamCardId String
+  team       Team   @relation(fields: [seasonSlug, teamCardId], references: [seasonSlug, cardId])
+  slot       String // e.g. "WR2" — the trait_type / roster slot label
+  value      String // e.g. "CHI WR1" — the team-position actually drafted; THIS is the exposure unit, not a player name
+
+  @@unique([seasonSlug, teamCardId, slot])
+  @@index([seasonSlug, value])
+  @@index([value])
+}
+
+model ScoreSnapshot {
+  id           String   @id @default(cuid())
+  seasonSlug   String   @default("bbb4")
+  teamCardId   String
+  team         Team     @relation(fields: [seasonSlug, teamCardId], references: [seasonSlug, cardId])
+  gameweek     String // e.g. "2026REG-01" for a live season, or "bbb3-final" for an imported final snapshot
+  rank         Int?
+  weeklyScore  Float
+  seasonScore  Float
+  capturedAt   DateTime @default(now())
+
+  @@unique([seasonSlug, teamCardId, gameweek])
+  @@index([gameweek])
+  @@index([seasonSlug, teamCardId])
+}
+
+// One row per data-pipeline run, for a simple public "last updated" indicator
+// and basic observability without needing an external monitoring service.
+model SyncLog {
+  id          String   @id @default(cuid())
+  source      String // "sbs-leaderboard" | "opensea-collection" | "opensea-season-import"
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  recordCount Int?
+  ok          Boolean  @default(false)
+  errorText   String?
+}

@@ -1,0 +1,34 @@
+name: Sync SBS leaderboard
+
+# Free alternative/supplement to Vercel Cron: Vercel's free Hobby tier limits
+# cron jobs to once a day, which is fine for scores that only change on NFL
+# game days but too slow if you want the leaderboard to feel "live" during
+# Sun/Mon/Thu games. This workflow runs on GitHub's free CI minutes instead
+# and can fire much more often.
+#
+# Setup: in your GitHub repo, add these as Actions secrets (Settings ->
+# Secrets and variables -> Actions):
+#   DATABASE_URL   - same Postgres connection string as your Vercel deploy
+# Then this workflow calls `npm run sync:leaderboard` directly (it does not
+# need SYNC_SECRET or your deployed URL — it talks straight to the DB).
+
+on:
+  schedule:
+    # Every 15 minutes. Tune this down (e.g. hourly, or only during the NFL
+    # window) if you want to be extra polite to sbsfantasy.com's API.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run sync:leaderboard
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

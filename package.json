@@ -1,0 +1,40 @@
+{
+  "name": "bbbdb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BBBdb — public leaderboard, pod tracker, and team-owner dashboard for SBS Banana Best Ball (Spoiled Banana Society). A play on bbmdb.com, Underdog Best Ball Mania's tracker.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "sync:leaderboard": "tsx scripts/sync-leaderboard.ts",
+    "sync:collection": "tsx scripts/sync-collection.ts",
+    "sync:all": "npm run sync:leaderboard && npm run sync:collection",
+    "import:season": "tsx scripts/import-season.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "next": "14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39",
+    "prisma": "^5.20.0",
+    "tailwindcss": "^3.4.4",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}
