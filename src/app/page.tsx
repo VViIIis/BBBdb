@@ -65,11 +65,24 @@ export default async function LeaderboardPage({
     return <span className="ml-1 text-banana-400">{dir === "asc" ? "▲" : "▼"}</span>;
   }
 
-  const latest = await prisma.scoreSnapshot.findFirst({
-    where: { seasonSlug: season.slug },
-    orderBy: { capturedAt: "desc" },
-    select: { gameweek: true, capturedAt: true },
-  });
+  // "last synced" is shown from SyncLog rather than ScoreSnapshot.capturedAt:
+  // SyncLog gets a fresh row every run (see syncLeaderboard.ts), so it can't
+  // drift from what GitHub Actions' run history shows the way capturedAt
+  // could when a sync just re-upserts scores onto an already-existing
+  // gameweek row.
+  const [latest, lastSync] = await Promise.all([
+    prisma.scoreSnapshot.findFirst({
+      where: { seasonSlug: season.slug },
+      orderBy: { capturedAt: "desc" },
+      select: { gameweek: true, capturedAt: true },
+    }),
+    prisma.syncLog.findFirst({
+      where: { source: "sbs-leaderboard", ok: true },
+      orderBy: { finishedAt: "desc" },
+      select: { finishedAt: true },
+    }),
+  ]);
+  const lastSyncedAt = lastSync?.finishedAt ?? latest?.capturedAt ?? null;
 
   const orderBy =
     sortKey === "rank"
@@ -99,7 +112,7 @@ export default async function LeaderboardPage({
           <p className="text-sm text-zinc-400">
             {season.name}
             {latest
-              ? ` · gameweek ${latest.gameweek} · last synced ${latest.capturedAt.toLocaleString()}`
+              ? ` · gameweek ${latest.gameweek} · last synced ${lastSyncedAt ? lastSyncedAt.toLocaleString() : "unknown"}`
               : season.isActive
                 ? " · no data yet — run `npm run sync:leaderboard` to pull the first snapshot."
                 : " · this season isn't live-scored — see the team pages for final results."}

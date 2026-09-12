@@ -162,6 +162,12 @@ export async function runSyncLeaderboard() {
               rank: row.rank,
               weeklyScore: row.weeklyScore,
               seasonScore: row.seasonScore,
+              // Previously only set in `create`, so re-syncing an existing
+              // gameweek's row (the normal case — the same gameweek stays
+              // active for hours) never advanced capturedAt, which made the
+              // homepage's "last synced" label freeze at whenever that row
+              // was first created even though GitHub Actions kept succeeding.
+              capturedAt: new Date(),
             },
           });
 
