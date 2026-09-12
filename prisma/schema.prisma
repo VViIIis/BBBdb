@@ -44,17 +44,19 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (pgbouncer, port 6543) — used at runtime by the app and sync scripts
+  directUrl = env("DIRECT_URL") // unpooled (port 5432) — used ONLY by `prisma migrate`/`db push` for their shadow database. Required with Supabase's transaction pooler: PgBouncer in transaction mode can't run the DDL/advisory-lock sequence migrations need, which is why `prisma migrate dev` was hanging silently at the "Datasource..." line with DATABASE_URL alone.
 }
 
 model Season {
-  slug      String  @id // e.g. "bbb3", "bbb4" — used in URLs
-  name      String // e.g. "Banana Best Ball IV"
-  chain     String // "base" | "ethereum" — passed to the OpenSea client
-  contract  String // NFT contract address (lowercase)
-  isActive  Boolean @default(false) // true for the one currently-live season; controls the default season shown site-wide and which season scripts sync into when none is specified
-  teams     Team[]
+  slug           String  @id // e.g. "bbb3", "bbb4" — used in URLs
+  name           String // e.g. "Banana Best Ball IV"
+  chain          String // "base" | "ethereum" — passed to the OpenSea client
+  contract       String // NFT contract address (lowercase)
+  isActive       Boolean @default(false) // true for the one currently-live season; controls the default season shown site-wide and which season scripts sync into when none is specified
+  collectionSlug String? // OpenSea's collection slug (e.g. "banana-best-ball-4", from opensea.io/collection/<slug>) — used ONLY by sync-sales.ts to hit OpenSea's collection-wide events endpoint. Nullable because a season with no slug set (e.g. a concluded one you never wired up) just skips sales sync rather than erroring anywhere else.
+  teams          Team[]
 }
 
 model Owner {
@@ -87,6 +89,7 @@ model Team {
   lastSeenAt     DateTime @updatedAt
   scores         ScoreSnapshot[]
   rosterSlots    RosterSlot[]
+  sales          Sale[]
 
   @@id([seasonSlug, cardId])
   @@index([ownerWallet])
@@ -122,6 +125,34 @@ model ScoreSnapshot {
   @@unique([seasonSlug, teamCardId, gameweek])
   @@index([gameweek])
   @@index([seasonSlug, teamCardId])
+}
+
+// One row per OpenSea marketplace SALE event (not a plain wallet-to-wallet
+// transfer, gift, or mint — see sync-sales.ts's event_type=sale filter) for
+// a drafted team. Powers /trades ("what's being traded, and by whom").
+// Sales are treated as immutable historical facts once written — a re-sync
+// that re-sees the same event (possible given the small overlap window
+// sync-sales.ts re-checks each run) just no-ops via `eventKey`'s unique
+// constraint rather than re-writing anything.
+model Sale {
+  id            String   @id @default(cuid())
+  seasonSlug    String
+  teamCardId    String
+  team          Team     @relation(fields: [seasonSlug, teamCardId], references: [seasonSlug, cardId])
+  eventKey      String   @unique // synthesized in sync-sales.ts from OpenSea's tx hash (or order hash as a fallback) + card id — OpenSea's events payload doesn't expose one obvious canonical event id, so this is our own idempotency key
+  occurredAt    DateTime // when the sale happened on-chain, per OpenSea
+  txHash        String?
+  fromWallet    String // seller
+  toWallet      String // buyer
+  priceEth      Float? // null if OpenSea reports a payment token this app doesn't try to price (anything but native ETH)
+  paymentSymbol String? // e.g. "ETH" — kept alongside priceEth so a non-ETH sale isn't silently misrepresented as free/zero
+  marketplace   String? // best-effort, e.g. "opensea"
+  createdAt     DateTime @default(now()) // when OUR sync wrote this row, not when the sale happened (that's occurredAt)
+
+  @@index([seasonSlug, occurredAt])
+  @@index([toWallet])
+  @@index([fromWallet])
+  @@index([teamCardId])
 }
 
 // One row per data-pipeline run, for a simple public "last updated" indicator

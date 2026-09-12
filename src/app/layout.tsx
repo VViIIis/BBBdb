@@ -30,6 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/exposure" className="hover:text-banana-400">
                 Exposure
               </a>
+              <a href="/trades" className="hover:text-banana-400">
+                Trades
+              </a>
             </nav>
           </header>
           {children}

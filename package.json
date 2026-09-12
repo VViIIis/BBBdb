@@ -11,7 +11,8 @@
     "postinstall": "prisma generate",
     "sync:leaderboard": "tsx scripts/sync-leaderboard.ts",
     "sync:collection": "tsx scripts/sync-collection.ts",
-    "sync:all": "npm run sync:leaderboard && npm run sync:collection",
+    "sync:sales": "tsx scripts/sync-sales.ts",
+    "sync:all": "npm run sync:leaderboard && npm run sync:collection && npm run sync:sales",
     "import:season": "tsx scripts/import-season.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -21,7 +22,6 @@
   "dependencies": {
     "@prisma/client": "^5.20.0",
     "@vercel/analytics": "^2.0.1",
-    "dotenv": "^17.4.2",
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

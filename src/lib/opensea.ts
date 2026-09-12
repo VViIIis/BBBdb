@@ -76,6 +76,61 @@ export async function getNftByTokenId(
   return data.nft;
 }
 
+// --- Marketplace sale events (powers /trades — see sync-sales.ts) ---
+//
+// UNVERIFIED against a live response, same caveat as the rest of this file:
+// written from OpenSea's documented v2 "collection events" shape
+// (https://docs.opensea.io/reference/retrieving-collection-events), not
+// test-called (no key was available while writing this either). Two field
+// names in particular are guesses at which of OpenSea's documented
+// variants applies here (`closing_date` vs `event_timestamp` for when the
+// sale happened) — sync-sales.ts logs the first real event it fetches in
+// full specifically so a mismatch is obvious on the first real run instead
+// of silently producing empty/wrong rows.
+
+export interface OpenSeaSaleEvent {
+  event_type: string; // expected "sale" (this file only ever requests event_type=sale)
+  transaction?: string | null; // on-chain tx hash
+  order_hash?: string | null;
+  closing_date?: number; // unix seconds
+  event_timestamp?: number; // unix seconds — fallback name, see comment above
+  seller?: string;
+  buyer?: string;
+  payment?: { quantity: string; decimals: number; symbol: string; token_address?: string };
+  nft?: { identifier: string };
+}
+
+/**
+ * One page of SALE events for an entire collection (not per-token — this is
+ * what makes sales sync cheap compared to sync-collection.ts's one-call-
+ * per-token census). `cursor` continues a previous page via OpenSea's
+ * `next` value; `occurredAfter` (unix seconds) bounds how far back to look,
+ * for incremental syncs.
+ */
+export async function getCollectionSaleEvents(
+  collectionSlug: string,
+  opts: { cursor?: string; occurredAfter?: number } = {},
+): Promise<{ events: OpenSeaSaleEvent[]; next: string | null }> {
+  const params = new URLSearchParams({ event_type: "sale", limit: "50" });
+  if (opts.cursor) params.set("next", opts.cursor);
+  if (opts.occurredAfter != null) params.set("occurred_after", String(opts.occurredAfter));
+
+  const res = await fetch(`${OPENSEA_BASE}/events/collection/${collectionSlug}?${params}`, {
+    headers: { accept: "application/json", "x-api-key": apiKey() },
+    cache: "no-store",
+  });
+  if (res.status === 429) {
+    throw Object.assign(new Error("rate limited"), { rateLimited: true });
+  }
+  if (!res.ok) {
+    throw new Error(
+      `OpenSea API events/collection/${collectionSlug} -> HTTP ${res.status}: ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as { asset_events?: OpenSeaSaleEvent[]; next?: string | null };
+  return { events: data.asset_events ?? [], next: data.next ?? null };
+}
+
 export function traitValue(nft: OpenSeaNft, traitType: string): string | number | undefined {
   return nft.traits.find((t) => t.trait_type.toLowerCase() === traitType.toLowerCase())?.value;
 }

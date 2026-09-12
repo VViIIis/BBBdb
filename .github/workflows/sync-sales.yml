@@ -1,0 +1,32 @@
+name: Sync SBS marketplace sales
+
+# Pulls new OpenSea SALE events for the active season into the `Sale` table
+# (see prisma/schema.prisma), powering the /trades page. Much lighter than
+# sync-collection.ts's full-census pull: this hits OpenSea's collection-wide
+# events endpoint (a handful of paginated calls, not one call per token), so
+# it's safe to run on a normal schedule like sync.yml — unlike
+# sync-collection.ts, which stays manual/occasional on purpose.
+#
+# Setup: needs the same DATABASE_URL secret as sync.yml, PLUS an
+# OPENSEA_API_KEY secret (Settings -> Secrets and variables -> Actions) —
+# use the same value as your Vercel OPENSEA_API_KEY env var.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync-sales:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run sync:sales
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENSEA_API_KEY: ${{ secrets.OPENSEA_API_KEY }}

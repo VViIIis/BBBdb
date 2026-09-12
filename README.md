@@ -198,20 +198,38 @@ last updated at ___" without needing an external monitoring tool.
   season's collection/import script hasn't been (re-)run since roster
   capture was added — re-running either is safe (insert-only, skips rows
   that already exist).
+- **Trades** (`/trades`) — marketplace sale activity: which Team Positions
+  change hands most (same unit as `/exposure`, measured by trade count
+  instead of holdings), a top-traders leaderboard (bought/sold counts + ETH
+  volume, ranked by total transactions), and a recent-sales feed. Backed by
+  a new `Sale` table, populated by `scripts/sync-sales.ts` from OpenSea's
+  collection-wide `/events` endpoint (`event_type=sale` only — plain
+  transfers/mints/gifts are excluded on purpose). Only works for a season
+  that has `Season.collectionSlug` set (e.g. `banana-best-ball-4`, from that
+  collection's `opensea.io/collection/<slug>` URL) — a season without one
+  shows a plain "not set up" message instead of erroring. **v1 scope**:
+  BBB IV only; BBB III (concluded) was deliberately left without a
+  `collectionSlug` since there's no new trading left to track there.
+  **Caveat worth knowing**: the exact OpenSea events field names
+  (`sync-sales.ts`/`src/lib/opensea.ts`) were written from OpenSea's
+  documented v2 shape, not verified against a live response — the first
+  real sync logs one full raw event so a naming mismatch is obvious
+  immediately instead of silently producing empty/wrong rows; check that log
+  line after the first real run and adjust `eventOccurredAtSeconds()` /
+  `eventKeyFor()` in `src/lib/jobs/syncSales.ts` if needed.
 - `/api/leaderboard`, `/api/owner/[wallet]`, `/api/team/[season]/[cardId]`,
-  `/api/pod/[season]/[level]/[leagueName]`, `/api/owners`, and
-  `/api/exposure/[wallet]` — the same data as JSON, if you want to build a
+  `/api/pod/[season]/[level]/[leagueName]`, `/api/owners`, `/api/exposure/[wallet]`,
+  and `/api/trades` — the same data as JSON, if you want to build a
   mobile app or another frontend against it later.
 - `/api/sync` — a secret-protected endpoint for triggering a leaderboard
   sync via Vercel Cron.
 
 ## What's not built yet
 
-The last piece of bbmdb-style parity that's not built: a **marketplace/sales
-activity** view (exposure is done — see `/exposure` above). Sale history
-needs a new data source (OpenSea's `/events` endpoint, not called yet) and a
-schema change (a `Sale`/`Trade` table). This is the biggest remaining lift
-and hasn't been started.
+Full bbmdb-style parity is now in place (Exposure and Trades were the last
+two pieces). Nothing major is currently planned — future ideas would be
+things like week-over-week score charts or price-history charts per Team
+Position, not new top-level features.
 
 ## Getting it running locally
 
@@ -231,9 +249,11 @@ This stack (Next.js + Postgres) fits comfortably in free tiers:
    [Neon](https://neon.tech) free tier Postgres. Copy the connection string
    into `DATABASE_URL`.
 2. **Hosting**: [Vercel](https://vercel.com) free (Hobby) tier — connect
-   this repo, set the `DATABASE_URL`, `SYNC_SECRET`, and (if using it)
-   `OPENSEA_API_KEY` / `OPENSEA_COLLECTION_SLUG` environment variables in
-   the Vercel project settings, deploy.
+   this repo, set the `DATABASE_URL`, `SYNC_SECRET`, and (if using OpenSea
+   features) `OPENSEA_API_KEY` environment variables in the Vercel project
+   settings, deploy. A season's OpenSea collection slug (for `/trades`)
+   lives in the database as `Season.collectionSlug`, not an env var — see
+   "Trades" above.
 3. **Domain**: optional — Vercel gives you a free `*.vercel.app` subdomain
    out of the box; buy a real domain later if you want (any registrar,
    point it at Vercel).
@@ -250,6 +270,10 @@ This stack (Next.js + Postgres) fits comfortably in free tiers:
    - For the full NFT census (`sync:collection`), run it manually or on a
      much slower GitHub Actions schedule (e.g. daily) — it's a much heavier
      pull than the leaderboard sync.
+   - For marketplace sales (`sync:sales`, powers `/trades`), a GitHub Actions
+     workflow (`.github/workflows/sync-sales.yml`) is wired up on a 30-minute
+     schedule by default — needs both `DATABASE_URL` and `OPENSEA_API_KEY`
+     as repo secrets.
 
 ## Tech stack
 
