@@ -7,8 +7,10 @@ import { getAllSeasons, resolveSeason } from "@/lib/seasons";
 export const dynamic = "force-dynamic";
 
 // Fixed display order so the position filter reads QB -> RB -> WR -> TE ->
-// DST -> FLEX -> anything unrecognized, matching src/lib/opensea.ts.
-const POSITION_ORDER = ["QB", "RB", "WR", "TE", "DST", "FLEX", "OTHER"];
+// DST, matching src/lib/opensea.ts. FLEX/OTHER are deliberately excluded
+// from the filter tabs (not useful as a lookup target), but a Team Position
+// that falls into either tier is still counted under "All".
+const POSITION_ORDER = ["QB", "RB", "WR", "TE", "DST"];
 
 function shortWallet(wallet: string) {
   return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
