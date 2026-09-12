@@ -200,11 +200,16 @@ last updated at ___" without needing an external monitoring tool.
   that already exist).
 - **Trades** (`/trades`) — marketplace sale activity: which Team Positions
   change hands most (same unit as `/exposure`, measured by trade count
-  instead of holdings), a top-traders leaderboard (bought/sold counts + ETH
-  volume, ranked by total transactions), and a recent-sales feed. Backed by
-  a new `Sale` table, populated by `scripts/sync-sales.ts` from OpenSea's
-  collection-wide `/events` endpoint (`event_type=sale` only — plain
-  transfers/mints/gifts are excluded on purpose). Only works for a season
+  instead of holdings), a top-traders leaderboard (bought/sold counts +
+  volume in whatever currency the collection actually trades in, ranked by
+  total transactions), and a recent-sales feed. Prices are labeled from each
+  sale's real `paymentSymbol` (BBB IV trades in USDC, not ETH, despite the
+  `Sale.priceEth` column name — that name's a holdover from writing this
+  before a real sale was ever seen; the column just holds whatever unit
+  `paymentSymbol` names). Backed by a new `Sale` table, populated by
+  `scripts/sync-sales.ts` from OpenSea's collection-wide `/events` endpoint
+  (`event_type=sale` only — plain transfers/mints/gifts are excluded on
+  purpose). Only works for a season
   that has `Season.collectionSlug` set (e.g. `banana-best-ball-4`, from that
   collection's `opensea.io/collection/<slug>` URL) — a season without one
   shows a plain "not set up" message instead of erroring. **v1 scope**:

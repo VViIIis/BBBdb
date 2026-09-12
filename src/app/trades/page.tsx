@@ -10,9 +10,14 @@ function shortWallet(wallet: string) {
   return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 }
 
-function formatEth(n: number | null) {
+// Sale prices are stored in whatever currency OpenSea reports for that sale
+// (see `paymentSymbol` on the Sale model) — this collection trades in USDC,
+// not ETH, so the label has to come from the actual data instead of being
+// assumed. `symbol` is optional so a lone value (no aggregation context)
+// can still render before we know it.
+function formatPrice(n: number | null, symbol?: string | null) {
   if (n == null) return "—";
-  return `${n.toFixed(3)} ETH`;
+  return `${n.toFixed(3)}${symbol ? ` ${symbol}` : ""}`;
 }
 
 // --- "Most-traded Team Positions" sort ---
@@ -143,6 +148,18 @@ export default async function TradesPage({
     walletsToLookUp.add(s.fromWallet);
     walletsToLookUp.add(s.toWallet);
   }
+
+  // Aggregated tables (positions, traders) sum across many sales into one
+  // number, so they need ONE label rather than a per-row symbol. In
+  // practice this collection trades in a single currency, so "whatever
+  // shows up most often" is a safe stand-in for "the" currency; if that
+  // ever stops being true, the per-sale symbol in the recent-sales feed
+  // below is still accurate regardless.
+  const symbolCounts = new Map<string, number>();
+  for (const s of sales) {
+    if (s.paymentSymbol) symbolCounts.set(s.paymentSymbol, (symbolCounts.get(s.paymentSymbol) ?? 0) + 1);
+  }
+  const dominantSymbol = [...symbolCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
   // --- "Most-traded Team Positions": expand each sale to every Team
   // Position the sold team carries, and count how many sale events involved
@@ -290,7 +307,7 @@ export default async function TradesPage({
                   </th>
                   <th className="px-3 py-2 text-right">
                     <Link href={posSortHref("avgPrice")} className="hover:text-banana-400">
-                      Avg price{posSortIndicator("avgPrice")}
+                      Avg price{dominantSymbol ? ` (${dominantSymbol})` : ""}{posSortIndicator("avgPrice")}
                     </Link>
                   </th>
                 </tr>
@@ -302,7 +319,7 @@ export default async function TradesPage({
                     <td className="px-3 py-2 text-zinc-400">{r.position}</td>
                     <td className="px-3 py-2 text-right font-mono">{r.count}</td>
                     <td className="px-3 py-2 text-right font-mono font-semibold">
-                      {formatEth(r.avgPrice)}
+                      {formatPrice(r.avgPrice)}
                     </td>
                   </tr>
                 ))}
@@ -334,7 +351,7 @@ export default async function TradesPage({
                   </th>
                   <th className="px-3 py-2 text-right">
                     <Link href={traderSortHref("ethTotal")} className="hover:text-banana-400">
-                      ETH volume{traderSortIndicator("ethTotal")}
+                      Volume{dominantSymbol ? ` (${dominantSymbol})` : ""}{traderSortIndicator("ethTotal")}
                     </Link>
                   </th>
                 </tr>
@@ -351,7 +368,7 @@ export default async function TradesPage({
                     <td className="px-3 py-2 text-right font-mono">{r.sold}</td>
                     <td className="px-3 py-2 text-right font-mono font-semibold">{r.total}</td>
                     <td className="px-3 py-2 text-right font-mono text-zinc-400">
-                      {formatEth(r.ethTotal)}
+                      {formatPrice(r.ethTotal)}
                     </td>
                   </tr>
                 ))}
@@ -393,7 +410,7 @@ export default async function TradesPage({
                       </Link>
                     </td>
                     <td className="px-3 py-2 text-right font-mono font-semibold">
-                      {formatEth(s.priceEth)}
+                      {formatPrice(s.priceEth, s.paymentSymbol)}
                     </td>
                     <td className="px-3 py-2 text-right text-xs text-zinc-500">
                       {s.occurredAt.toLocaleString()}
