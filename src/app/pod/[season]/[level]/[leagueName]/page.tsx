@@ -63,7 +63,6 @@ export default async function PodPage({
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">Team</th>
               <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">Weekly</th>
               <th className="px-3 py-2 text-right">Season</th>
             </tr>
@@ -92,7 +91,6 @@ export default async function PodPage({
                       {t.owner.displayName ?? shortWallet(t.ownerWallet)}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-zinc-400">{t.status}</td>
                   <td className="px-3 py-2 text-right font-mono">
                     {t.latest ? t.latest.weeklyScore.toFixed(2) : "—"}
                   </td>
