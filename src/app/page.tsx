@@ -69,7 +69,10 @@ export default async function LeaderboardPage({
   // SyncLog gets a fresh row every run (see syncLeaderboard.ts), so it can't
   // drift from what GitHub Actions' run history shows the way capturedAt
   // could when a sync just re-upserts scores onto an already-existing
-  // gameweek row.
+  // gameweek row. Two sources write scores now (sbs-leaderboard: light,
+  // frequent, top-500-only; sbs-standings-full: heavy, less frequent, every
+  // team — see syncStandings.ts) — whichever ran most recently is what's
+  // actually reflected in the DB, so take the max of the two.
   const [latest, lastSync] = await Promise.all([
     prisma.scoreSnapshot.findFirst({
       where: { seasonSlug: season.slug },
@@ -77,7 +80,7 @@ export default async function LeaderboardPage({
       select: { gameweek: true, capturedAt: true },
     }),
     prisma.syncLog.findFirst({
-      where: { source: "sbs-leaderboard", ok: true },
+      where: { source: { in: ["sbs-leaderboard", "sbs-standings-full"] }, ok: true },
       orderBy: { finishedAt: "desc" },
       select: { finishedAt: true },
     }),

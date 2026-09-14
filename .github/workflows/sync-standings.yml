@@ -1,0 +1,33 @@
+name: Sync SBS full standings (all pods, not just top-500)
+
+# Fixes "only top-500 global scorers ever get a score" — /api/leaderboard
+# (used by sync.yml) caps at 500 rows and ignores paging, so most teams
+# never appear there at all. This instead walks every pod (draftId) via
+# /api/standings, which returns a pod's COMPLETE ~10-team standings
+# regardless of global rank. See src/lib/sbsApi.ts's docblock and
+# src/lib/jobs/syncStandings.ts for the full story.
+#
+# Heavier than sync.yml (~1500 HTTP calls across ~1500 candidate pod ids,
+# most of which miss and are skipped — same tolerant-walk pattern as
+# sync-collection.ts's token-id walk), so it runs less often. Needs the same
+# DATABASE_URL secret as sync.yml and sync-sales.yml — no other secrets.
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync-standings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run sync:standings
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

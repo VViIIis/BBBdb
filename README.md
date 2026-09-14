@@ -87,22 +87,36 @@ Two sources feed this app, and each covers a gap the other has:
 
 | Source | What it gives you | Limitation |
 |---|---|---|
-| `sbsfantasy.com`'s own public JSON API (undocumented, no auth) | Live rank, weekly/season score, username, wallet, level, and pod (`leagueId`) for every scoring team | **Caps at 500 results per call and ignores offset/page/cursor** (confirmed by testing) — only gives you the top ~500 teams per ordering, not all 14,040 |
+| `sbsfantasy.com`'s `/api/leaderboard` (undocumented, no auth) | Live rank, weekly/season score, username, wallet, level, and pod (`leagueId`) for every scoring team | **Caps at 500 results per call and ignores offset/page/cursor** (confirmed by testing) — only gives you the top ~500 teams per ordering, not all 14,040 |
+| `sbsfantasy.com`'s `/api/standings?draftId=...` (undocumented, no auth) | Complete standings (all ~10 teams, regardless of global rank) for ONE pod at a time | No cap, but there's no "list all pods" endpoint — you have to walk pod ids yourself (see below) |
 | OpenSea API v2 (official, needs a free API key) | Every minted token, its current owner wallet, roster traits, and marketplace listings/sales | No live game scores — this is the census/ownership/roster source, not the scoring source |
 
-`scripts/sync-leaderboard.ts` pulls from SBS (fast, run often — every 15–60
-min). `scripts/sync-collection.ts` pulls from OpenSea (heavier, run daily)
-to fill in every team that exists but isn't currently a top scorer, and to
-track ownership changes from trading. Both write into the same `Team` /
-`Owner` / `ScoreSnapshot` tables, so pages don't need to know which source a
-row came from.
+`scripts/sync-leaderboard.ts` pulls from `/api/leaderboard` (fast, a handful
+of calls, run often — every 15–60 min) — good for "what's #1 right now" but,
+by itself, leaves most teams with **no score at all**, since most teams
+never crack a global top-500 pull. `scripts/sync-standings.ts` fixes that:
+it walks every pod id (`draftId`, e.g. `2026-fast-draft-606`) and pulls that
+pod's full standings via `/api/standings`, so every drafted team gets a real
+score regardless of rank — see `src/lib/sbsApi.ts`'s docblock for exactly
+how the valid `draftId` ranges were found (live-probed against the site,
+since there's no documentation or "list pods" endpoint). It's a much
+heavier pull (~1,500 HTTP calls, one per candidate pod, most of which miss
+and are cheaply skipped — same tolerant-walk shape as `sync-collection.ts`'s
+token walk), so it runs less often (every 2 hours by default). Run it once
+manually (`npm run sync:standings`) any time an owner's page looks like it's
+"only showing top scores." `scripts/sync-collection.ts` pulls from OpenSea
+(heavier still, run daily) to fill in every team that exists at all — even
+ones that have never scored a point — and to track ownership changes from
+trading. All three write into the same `Team` / `Owner` / `ScoreSnapshot`
+tables, so pages don't need to know which source a row came from.
 
 **The SBS client (`src/lib/sbsApi.ts`) was verified end-to-end against the
 live site** — every function in it (`getCurrentGameweek`, `getLeaderboard`,
-`getUserProfiles`, `parseTeamName`) was test-called against real
-sbsfantasy.com responses while building this, including confirming the
-`/api/leaderboard` 500-row cap and the exact request body shape
-`display-batch` expects. The OpenSea client (`src/lib/opensea.ts`) is
+`getFullStandings`, `getUserProfiles`, `parseTeamName`) was test-called
+against real sbsfantasy.com responses while building this, including
+confirming the `/api/leaderboard` 500-row cap, the exact `/api/standings`
+per-pod response shape, and the exact request body shape `display-batch`
+expects. The OpenSea client (`src/lib/opensea.ts`) is
 written from OpenSea's documented v2 shape and what's visible in their UI (I
 inspected a real token's Traits panel — 23 traits, including per-slot
 values like `PHI-QB` plus `League #`, `Level`, `Rank`, `Status`,
@@ -136,6 +150,12 @@ last updated at ___" without needing an external monitoring tool.
   filterable by level (Pro / HOF / Jackpot / JackHOF / Founder), reading
   from your database (not a live call on every page load). A season switcher
   appears once more than one season exists.
+- **Full score coverage, not just the top 500** — `scripts/sync-standings.ts`
+  walks every pod on the site (not just the global top scorers) so an
+  owner's page, team page, or pod page shows a real score for every team
+  they hold, not just whichever one happens to rank well globally. See the
+  "Data sources" section above for how this works and why it's a separate
+  script from `sync-leaderboard.ts`.
 - **Owner portfolio** (`/owner/[wallet]`) — every known team for one wallet,
   scoped to one season at a time (defaults to the currently-active season;
   a season switcher lets you pick BBB III vs BBB IV, plus an "All-time" tab
@@ -242,7 +262,8 @@ Position, not new top-level features.
 npm install
 cp .env.example .env   # fill in DATABASE_URL at minimum
 npx prisma migrate dev --name init
-npm run sync:leaderboard   # pulls real data right away
+npm run sync:leaderboard   # pulls real data right away (top scorers only)
+npm run sync:standings     # fills in every OTHER team's score too (slower)
 npm run dev                # http://localhost:3000
 ```
 
@@ -272,6 +293,12 @@ This stack (Next.js + Postgres) fits comfortably in free tiers:
      on whatever schedule you want (wired to every 15 minutes by default).
      Add `DATABASE_URL` as a repo secret. This is the better default if you
      want scores to feel live on Sundays.
+   - For full score coverage (`sync:standings`, every team — not just top
+     scorers), a GitHub Actions workflow
+     (`.github/workflows/sync-standings.yml`) is wired up on a 2-hour
+     schedule by default — needs only the same `DATABASE_URL` secret. It's
+     a much heavier pull than `sync:leaderboard` (walks ~1,500 pod ids), so
+     it shouldn't run as often.
    - For the full NFT census (`sync:collection`), run it manually or on a
      much slower GitHub Actions schedule (e.g. daily) — it's a much heavier
      pull than the leaderboard sync.
