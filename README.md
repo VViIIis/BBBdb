@@ -242,6 +242,22 @@ last updated at ___" without needing an external monitoring tool.
   immediately instead of silently producing empty/wrong rows; check that log
   line after the first real run and adjust `eventOccurredAtSeconds()` /
   `eventKeyFor()` in `src/lib/jobs/syncSales.ts` if needed.
+  **Second source, `scripts/sync-sbs-trades.ts`**: OpenSea's sale-events feed
+  only sees trades made ON OpenSea — it does NOT see trades made through
+  SBS's own in-app marketplace (sbsfantasy.com's "Marketplace" tab), which
+  settle on-chain but are simply never reported to OpenSea at all. Found
+  this when a real purchase made there never showed up on `/trades` despite
+  `sync-sales.ts` working perfectly. `sync-sbs-trades.ts` closes the gap by
+  walking every known wallet (the `Owner` table) and pulling each one's
+  activity from SBS's own (also undocumented) `/api/marketplace/activity`
+  endpoint — see the docblock on `getWalletMarketplaceActivity` in
+  `src/lib/sbsApi.ts` for exactly how this was discovered and confirmed
+  (including the pagination param name, which two of the three plausible
+  guesses turned out to be silently ignored by the API). Writes into the
+  same `Sale` table, tagged `marketplace: "sbs"` so it's distinguishable
+  from OpenSea-sourced rows. SBS's own in-app marketplace has had only
+  ~58 sales total as of writing — small, but otherwise completely invisible
+  without this.
 - `/api/leaderboard`, `/api/owner/[wallet]`, `/api/team/[season]/[cardId]`,
   `/api/pod/[season]/[level]/[leagueName]`, `/api/owners`, `/api/exposure/[wallet]`,
   and `/api/trades` — the same data as JSON, if you want to build a
@@ -306,6 +322,12 @@ This stack (Next.js + Postgres) fits comfortably in free tiers:
      workflow (`.github/workflows/sync-sales.yml`) is wired up on a 30-minute
      schedule by default — needs both `DATABASE_URL` and `OPENSEA_API_KEY`
      as repo secrets.
+   - For SBS's own in-app marketplace trades (`sync:sbs-trades`, the OTHER
+     half of `/trades` — see "Trades" above), a GitHub Actions workflow
+     (`.github/workflows/sync-sbs-trades.yml`) is wired up on a 2-hour
+     schedule by default — needs only `DATABASE_URL` (never talks to
+     OpenSea). One call per known wallet, so it's closer in weight to
+     `sync:standings` than to `sync:sales`.
 
 ## Tech stack
 

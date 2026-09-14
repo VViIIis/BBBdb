@@ -1,0 +1,38 @@
+name: Sync SBS native marketplace trades
+
+# OpenSea's public sale-events feed (sync-sales.yml) ONLY sees trades made
+# on OpenSea itself — it never sees trades made through SBS's own in-app
+# marketplace (sbsfantasy.com's "Marketplace" tab), which settle on-chain
+# but aren't reported to OpenSea's collection-events API at all. This job
+# closes that gap by walking every known wallet (the `Owner` table) and
+# pulling each one's marketplace activity directly from sbsfantasy.com. See
+# the docblock on getWalletMarketplaceActivity in src/lib/sbsApi.ts for how
+# this gap was found, and src/lib/jobs/syncSbsTrades.ts for the sync logic.
+#
+# One call per wallet (~3,200+ and growing), so this is closer in weight to
+# sync-standings.yml than to sync-sales.yml — same 25-minute timeout that
+# job needed, and offset in the schedule so they don't both hammer
+# sbsfantasy.com at the same minute.
+#
+# Needs the same DATABASE_URL secret as sync.yml/sync-sales.yml — no other
+# secrets (this never talks to OpenSea).
+
+on:
+  schedule:
+    - cron: "47 */2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync-sbs-trades:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run sync:sbs-trades
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

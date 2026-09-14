@@ -206,6 +206,111 @@ export async function getUserProfiles(
   return data.users;
 }
 
+/**
+ * SBS's own IN-APP marketplace (sbsfantasy.com's "Marketplace" tab) is a
+ * completely separate venue from OpenSea — teams can be bought/sold there
+ * directly, on-chain, WITHOUT ever appearing on OpenSea. Discovered this the
+ * hard way: a user bought 3 teams through this marketplace and they never
+ * showed up on /trades, even though sync-sales.ts (OpenSea) was working
+ * perfectly and reported 0 skipped/unusable events on a real run. OpenSea's
+ * public `event_type=sale` collection-events feed (opensea.ts) simply never
+ * sees these trades at all — not a parsing bug, a genuine venue/scope gap.
+ * See src/lib/jobs/syncSbsTrades.ts for the sync job built on this.
+ *
+ * Confirmed live (unauthenticated, plain fetch from sbsfantasy.com) on
+ * 2026-09-14:
+ *   - `/api/marketplace/collection` reports collection-wide stats, e.g.
+ *     `{"floorPrice":15,"floorPriceSymbol":"USDC","totalSales":58,...}` —
+ *     SBS's native marketplace has had only ~58 sales EVER, a small,
+ *     tractable dataset (separate from OpenSea's own sale count).
+ *   - There is NO collection-wide activity feed: `/api/marketplace/activity`
+ *     with no query params 400s with `{"error":"wallet, tokenId, or
+ *     tokenIds parameter required"}`. So the only way to enumerate sales is
+ *     per-wallet (this project already has every known wallet in the
+ *     `Owner` table) or per-tokenId (a much bigger space — the collection
+ *     has ~14,000 tokens vs. a few thousand distinct owners — so wallet is
+ *     the smaller search space and what getWalletMarketplaceActivity below
+ *     uses).
+ *   - `/api/marketplace/activity?wallet=<address>` returns that wallet's
+ *     full activity history (`list` | `buy` | `sell` | `cancel`), newest
+ *     first, 20 per page. Confirmed pagination: the response's `nextCursor`
+ *     value is passed back as the REQUEST param `cursor` (NOT `nextCursor`
+ *     or `after` — both of those were silently ignored and just re-returned
+ *     page 1; only `cursor=` actually advanced the page, confirmed by
+ *     checking for zero id-overlap between pages).
+ *   - A single `type: "buy"` activity from the BUYER's own wallet is fully
+ *     self-sufficient to reconstruct a complete sale (buyer=`walletAddress`,
+ *     seller=`counterparty`, `price`, `tokenId`, `timestamp`,
+ *     `orderHash`/`txHash`) — cross-checked by independently querying the
+ *     seller's wallet and finding a matching `type: "sell"` entry with
+ *     identical `orderHash`/`txHash`/`price`/`timestamp`. So the sync only
+ *     needs `type === "buy"` entries, never `sell` (that would double-count
+ *     the same trade from the other side).
+ *   - `price` is already in DISPLAY units (e.g. `9` means $9.00, matching
+ *     the in-app "Purchase Complete — $9.00" notification exactly) — unlike
+ *     OpenSea's `payment.quantity`/`payment.decimals` pair, there's no
+ *     decimals math to do here. Payment symbol isn't included per-activity;
+ *     `/api/marketplace/collection`'s `floorPriceSymbol` says "USDC" for
+ *     this app, so that's hard-coded as the payment symbol below.
+ *   - `counterparty`, `orderHash`, and `txHash` are all `null` for `list`
+ *     and `cancel` entries (no other party / no on-chain settlement yet).
+ */
+export interface SbsMarketplaceActivity {
+  id: string;
+  type: "list" | "buy" | "sell" | "cancel";
+  walletAddress: string;
+  tokenId: string;
+  teamName?: string | null;
+  price: number | null;
+  counterparty: string | null;
+  orderHash: string | null;
+  txHash: string | null;
+  timestamp: string; // ISO
+}
+
+export interface SbsMarketplaceActivityPage {
+  activities: SbsMarketplaceActivity[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+/** One page of a single wallet's marketplace activity, newest first. Pass a
+ * prior page's `nextCursor` back in as `cursor` to continue. */
+export async function getWalletMarketplaceActivity(
+  wallet: string,
+  cursor?: string,
+): Promise<SbsMarketplaceActivityPage> {
+  const params = new URLSearchParams({ wallet });
+  if (cursor) params.set("cursor", cursor);
+  const data = await getJson<{
+    activities?: any[];
+    hasMore?: boolean;
+    nextCursor?: string | null;
+  }>(`/api/marketplace/activity?${params}`);
+  const activities = (data?.activities ?? [])
+    .map((a): SbsMarketplaceActivity | null => {
+      if (!a?.id || !a?.type || !a?.walletAddress || !a?.tokenId || !a?.timestamp) return null;
+      return {
+        id: String(a.id),
+        type: a.type,
+        walletAddress: String(a.walletAddress).toLowerCase(),
+        tokenId: String(a.tokenId),
+        teamName: a.teamName ?? null,
+        price: a.price != null ? Number(a.price) : null,
+        counterparty: a.counterparty ? String(a.counterparty).toLowerCase() : null,
+        orderHash: a.orderHash ?? null,
+        txHash: a.txHash ?? null,
+        timestamp: String(a.timestamp),
+      };
+    })
+    .filter((a): a is SbsMarketplaceActivity => a !== null);
+  return {
+    activities,
+    hasMore: Boolean(data?.hasMore),
+    nextCursor: data?.nextCursor ?? null,
+  };
+}
+
 /** Parses "BBB #687 · #7304" into { leaguePrefix: "BBB #687", cardId: "7304" }. */
 export function parseTeamName(teamName: string): { leaguePrefix: string; cardId: string | null } {
   const match = teamName.match(/^(.*?)(?:\s*·\s*#(\d+))?$/);
