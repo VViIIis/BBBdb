@@ -221,7 +221,40 @@ export async function runSyncStandings() {
       }
     }
 
-    log(`[sync-standings] wrote ${written} rows, finalizing sync log...`);
+    log(`[sync-standings] wrote ${written} rows, cleaning up phantom rows...`);
+
+    // One-time (per run, effectively self-limiting after the first) cleanup
+    // for a now-fixed bug: getFullStandings() used to key legacy promo/
+    // Wheel/Banana-Race picks (JackHOF/HOF "from ..." pods, under the
+    // 2025-slow-draft- prefix) by SBS's synthetic per-pick `_cardId`
+    // (e.g. "special-1788005018303-966d3b") instead of `card.realTokenId`
+    // (the actual NFT token id). That wrote real scores under a cardId
+    // that never matched the real, OpenSea-sourced Team row for that
+    // token — so the real team showed no score, AND a phantom Team row
+    // (no roster, no image, since OpenSea sync never creates one for a
+    // fake id) piled up here every run. The extraction is fixed above;
+    // this deletes whatever phantom rows already accumulated before the
+    // fix, for THIS season only. Children first (FK is ON DELETE
+    // RESTRICT) — safe to re-run: matches 0 rows once cleaned up.
+    const phantomWhere = { seasonSlug: season.slug, cardId: { startsWith: "special-" } };
+    const phantomTeams = await prisma.team.findMany({ where: phantomWhere, select: { cardId: true } });
+    if (phantomTeams.length > 0) {
+      const phantomCardIds = phantomTeams.map((t: { cardId: string }) => t.cardId);
+      const teamRef = { seasonSlug: season.slug, cardId: { in: phantomCardIds } };
+      const [deletedScores, deletedRoster, deletedSales] = await Promise.all([
+        prisma.scoreSnapshot.deleteMany({ where: { seasonSlug: season.slug, teamCardId: { in: phantomCardIds } } }),
+        prisma.rosterSlot.deleteMany({ where: { seasonSlug: season.slug, teamCardId: { in: phantomCardIds } } }),
+        prisma.sale.deleteMany({ where: { seasonSlug: season.slug, teamCardId: { in: phantomCardIds } } }),
+      ]);
+      const deletedTeams = await prisma.team.deleteMany({ where: teamRef });
+      log(
+        `[sync-standings] removed ${deletedTeams.count} phantom "special-*" team rows ` +
+          `(${deletedScores.count} scores, ${deletedRoster.count} roster slots, ${deletedSales.count} sales)`,
+      );
+    } else {
+      log("[sync-standings] no phantom rows to clean up");
+    }
+
     await prisma.syncLog.update({
       where: { id: syncLogRow.id },
       data: { finishedAt: new Date(), recordCount: written, ok: true },

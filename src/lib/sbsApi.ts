@@ -109,7 +109,29 @@ export async function getFullStandings(gameweek: string, draftId: string): Promi
   const entries = data?.leaderboard ?? [];
   return entries
     .map((e): SbsStandingsRow | null => {
-      const cardId = e?._cardId ?? e?.card?._cardId;
+      // card.realTokenId FIRST, not _cardId: for legacy 2025-slow-draft-
+      // pods (JackHOF/HOF "from Promo"/"from Wheel"/"from Banana Race"
+      // picks), `_cardId` is a synthetic per-pick id like
+      // "special-1788005018303-966d3b" — NOT the NFT token id our Team
+      // rows are keyed by. Those entries carry the real token id
+      // separately as `card.realTokenId` (confirmed live on
+      // 2026-09-14: draftId 2025-slow-draft-65's rank-1 entry had
+      // `_cardId: "special-1788005018303-966d3b"` and
+      // `card.realTokenId: "11089"`, matching the "· #11089" shown in
+      // the site's own UI). A normal (non-special) pick has no
+      // `realTokenId` at all and `_cardId` already IS the real token id,
+      // so this falls back correctly for every other pod.
+      //
+      // Getting this wrong (as an earlier version of this function did)
+      // doesn't drop these teams from the walk — the pod is still
+      // fetched and a row is still built — it just writes the score
+      // under the WRONG cardId, creating a phantom Team row that never
+      // matches the real, OpenSea-sourced Team row for that token. The
+      // real team then permanently shows no score even though this
+      // endpoint has one. See syncStandings.ts's end-of-run cleanup,
+      // which removes the phantom "special-*" rows this bug produced
+      // before this fix.
+      const cardId = e?.card?.realTokenId ?? e?._cardId ?? e?.card?._cardId;
       const ownerWallet = e?.ownerId ?? e?.card?._ownerId;
       const leagueId = e?.card?._leagueId;
       if (!cardId || !ownerWallet || !leagueId) return null;
