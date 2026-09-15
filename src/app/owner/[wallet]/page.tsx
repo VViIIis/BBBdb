@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAllSeasons } from "@/lib/seasons";
+import { getPodRanks, podRankByCardId, ordinal, PodKey, PodRankedTeam } from "@/lib/advancement";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,41 @@ export default async function OwnerPage({
   const bestTeam = scored[0] ?? null;
   const totalSeasonScore = scored.reduce((sum, t) => sum + (t.latest?.seasonScore ?? 0), 0);
 
+  // Pod placement (and this owner's overall advancement rate) only makes
+  // sense scoped to ONE season at a time — a pod's "top 2 of 10" is a
+  // season-specific concept, and viewAll intentionally lumps every season's
+  // teams together (see the comment above). So this is skipped entirely in
+  // the "All-time" view; single-season is the default anyway.
+  const podKeysSeen = new Set<string>();
+  const podKeys: PodKey[] = [];
+  if (selectedSlug) {
+    for (const t of teams) {
+      if (t.status === "draft_pass") continue;
+      const key = `${t.level}::${t.leagueName}`;
+      if (podKeysSeen.has(key)) continue;
+      podKeysSeen.add(key);
+      podKeys.push({ level: t.level, leagueName: t.leagueName });
+    }
+  }
+  const podRankByCard = selectedSlug
+    ? podRankByCardId(await getPodRanks(selectedSlug, podKeys))
+    : new Map<string, PodRankedTeam>();
+
+  let advancingCount = 0;
+  let scoredForRate = 0;
+  if (selectedSlug) {
+    const seenCardIds = new Set<string>();
+    for (const t of teams) {
+      if (t.status === "draft_pass" || seenCardIds.has(t.cardId)) continue;
+      seenCardIds.add(t.cardId);
+      const pr = podRankByCard.get(t.cardId);
+      if (pr?.podRank != null) {
+        scoredForRate++;
+        if (pr.advancing) advancingCount++;
+      }
+    }
+  }
+
   return (
     <main>
       <div className="mb-6 flex items-center gap-3">
@@ -97,7 +133,7 @@ export default async function OwnerPage({
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className={`mb-6 grid grid-cols-2 gap-3 ${selectedSlug ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
         <Stat label="Teams" value={teams.length} />
         <Stat label="Scored teams" value={scored.length} />
         <div className="rounded-lg border border-ink-600 bg-ink-800 px-3 py-2">
@@ -120,6 +156,23 @@ export default async function OwnerPage({
           label="Avg season pts"
           value={scored.length ? (totalSeasonScore / scored.length).toFixed(2) : "—"}
         />
+        {selectedSlug && (
+          <div className="rounded-lg border border-ink-600 bg-ink-800 px-3 py-2">
+            <div className="text-xs text-zinc-500">Advancing</div>
+            <div className="text-lg font-semibold">
+              {scoredForRate > 0 ? (
+                <>
+                  {advancingCount}/{scoredForRate}{" "}
+                  <span className="text-sm font-normal text-zinc-400">
+                    ({Math.round((advancingCount / scoredForRate) * 100)}%)
+                  </span>
+                </>
+              ) : (
+                "—"
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-ink-600">
@@ -129,6 +182,7 @@ export default async function OwnerPage({
               {viewAll && <th className="px-3 py-2">Season</th>}
               <th className="px-3 py-2">Team</th>
               <th className="px-3 py-2">Level</th>
+              {!viewAll && <th className="px-3 py-2">Pod</th>}
               <th className="px-3 py-2 text-right">Weekly</th>
               <th className="px-3 py-2 text-right">Season</th>
             </tr>
@@ -154,6 +208,20 @@ export default async function OwnerPage({
                   )}
                 </td>
                 <td className="px-3 py-2 text-zinc-400">{t.level}</td>
+                {!viewAll && (
+                  <td className="px-3 py-2">
+                    {(() => {
+                      const pr = podRankByCard.get(t.cardId);
+                      if (!pr || pr.podRank == null) return <span className="text-zinc-500">—</span>;
+                      return (
+                        <span className={pr.advancing ? "text-banana-400" : "text-zinc-400"}>
+                          {ordinal(pr.podRank)}/{pr.podSize}
+                          {pr.advancing && " ↑"}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                )}
                 <td className="px-3 py-2 text-right font-mono">
                   {t.latest ? t.latest.weeklyScore.toFixed(2) : "—"}
                 </td>
@@ -164,7 +232,7 @@ export default async function OwnerPage({
             ))}
             {teams.length === 0 && (
               <tr>
-                <td colSpan={viewAll ? 5 : 4} className="px-3 py-8 text-center text-zinc-500">
+                <td colSpan={5} className="px-3 py-8 text-center text-zinc-500">
                   No teams for this season.
                 </td>
               </tr>

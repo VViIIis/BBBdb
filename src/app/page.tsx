@@ -4,6 +4,7 @@ import LevelTabs from "@/components/LevelTabs";
 import SeasonTabs from "@/components/SeasonTabs";
 import { KNOWN_LEVELS } from "@/lib/sbsApi";
 import { getAllSeasons, resolveSeason } from "@/lib/seasons";
+import { getPodRanks, podRankByCardId, ordinal, PodKey } from "@/lib/advancement";
 
 export const dynamic = "force-dynamic"; // always read latest synced data, never cache stale scores
 
@@ -107,6 +108,20 @@ export default async function LeaderboardPage({
       })
     : [];
 
+  // SBS doesn't expose a per-pod rank (its own `_rank` field is global — see
+  // src/lib/advancement.ts), so it has to be computed here. Scoped to just
+  // the pods these 200 rows actually belong to — cheap (~10 rows/pod)
+  // compared to the whole-season scan /advancement does.
+  const podKeysSeen = new Set<string>();
+  const podKeys: PodKey[] = [];
+  for (const r of rows) {
+    const key = `${r.team.level}::${r.team.leagueName}`;
+    if (podKeysSeen.has(key)) continue;
+    podKeysSeen.add(key);
+    podKeys.push({ level: r.team.level, leagueName: r.team.leagueName });
+  }
+  const podRankByCard = podRankByCardId(await getPodRanks(season.slug, podKeys));
+
   return (
     <main>
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -155,6 +170,7 @@ export default async function LeaderboardPage({
               <th className="px-3 py-2">Owner</th>
               <th className="px-3 py-2">Team</th>
               <th className="px-3 py-2">Level</th>
+              <th className="px-3 py-2">Pod</th>
               <th className="px-3 py-2 text-right">
                 <Link href={sortHref("weekly")} className="hover:text-banana-400">
                   Weekly{sortIndicator("weekly")}
@@ -188,6 +204,18 @@ export default async function LeaderboardPage({
                   </Link>
                 </td>
                 <td className="px-3 py-2 text-zinc-400">{r.team.level}</td>
+                <td className="px-3 py-2">
+                  {(() => {
+                    const pr = podRankByCard.get(r.teamCardId);
+                    if (!pr || pr.podRank == null) return <span className="text-zinc-500">—</span>;
+                    return (
+                      <span className={pr.advancing ? "text-banana-400" : "text-zinc-400"}>
+                        {ordinal(pr.podRank)}/{pr.podSize}
+                        {pr.advancing && " ↑"}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="px-3 py-2 text-right font-mono">{r.weeklyScore.toFixed(2)}</td>
                 <td className="px-3 py-2 text-right font-mono font-semibold">
                   {r.seasonScore.toFixed(2)}
@@ -196,7 +224,7 @@ export default async function LeaderboardPage({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-zinc-500">
                   No teams to show yet for this filter.
                 </td>
               </tr>

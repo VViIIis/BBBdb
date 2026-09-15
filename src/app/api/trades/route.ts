@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { resolveSeason } from "@/lib/seasons";
+import { getPodRanks, podRankByCardId, PodKey } from "@/lib/advancement";
 
 /** Recent marketplace sales for one season, as JSON. See src/app/trades/page.tsx
  * for the full breakdowns (most-traded Team Positions, top traders) — this
@@ -21,18 +22,37 @@ export async function GET(req: NextRequest) {
     include: { team: { select: { leagueName: true, level: true } } },
   });
 
+  // Pod placement for the teams in this page of sales — see
+  // src/lib/advancement.ts for why this can't just be read off SBS's own
+  // `_rank` field (it's global, not per-pod).
+  const podKeysSeen = new Set<string>();
+  const podKeys: PodKey[] = [];
+  for (const s of sales) {
+    const key = `${s.team.level}::${s.team.leagueName}`;
+    if (podKeysSeen.has(key)) continue;
+    podKeysSeen.add(key);
+    podKeys.push({ level: s.team.level, leagueName: s.team.leagueName });
+  }
+  const podRankByCard = podRankByCardId(await getPodRanks(season.slug, podKeys));
+
   return NextResponse.json({
     season: season.slug,
-    sales: sales.map((s) => ({
-      teamCardId: s.teamCardId,
-      leagueName: s.team.leagueName,
-      level: s.team.level,
-      from: s.fromWallet,
-      to: s.toWallet,
-      priceEth: s.priceEth,
-      paymentSymbol: s.paymentSymbol,
-      marketplace: s.marketplace,
-      occurredAt: s.occurredAt,
-    })),
+    sales: sales.map((s) => {
+      const pr = podRankByCard.get(s.teamCardId);
+      return {
+        teamCardId: s.teamCardId,
+        leagueName: s.team.leagueName,
+        level: s.team.level,
+        podRank: pr?.podRank ?? null,
+        podSize: pr?.podSize ?? null,
+        advancing: pr?.advancing ?? false,
+        from: s.fromWallet,
+        to: s.toWallet,
+        priceEth: s.priceEth,
+        paymentSymbol: s.paymentSymbol,
+        marketplace: s.marketplace,
+        occurredAt: s.occurredAt,
+      };
+    }),
   });
 }

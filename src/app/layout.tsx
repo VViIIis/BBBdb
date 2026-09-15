@@ -27,6 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/owners" className="hover:text-banana-400">
                 Most Teams
               </a>
+              <a href="/advancement" className="hover:text-banana-400">
+                Advancement
+              </a>
               <a href="/exposure" className="hover:text-banana-400">
                 Exposure
               </a>

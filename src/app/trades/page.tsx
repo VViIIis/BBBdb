@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { positionOf } from "@/lib/opensea";
 import SeasonTabs from "@/components/SeasonTabs";
 import { getAllSeasons, resolveSeason } from "@/lib/seasons";
+import { getPodRanks, podRankByCardId, ordinal, PodKey } from "@/lib/advancement";
 
 export const dynamic = "force-dynamic";
 
@@ -260,6 +261,21 @@ export default async function TradesPage({
     return ownerByWallet.get(wallet)?.displayName ?? shortWallet(wallet);
   }
 
+  // Pod placement for the teams shown in "Recent sales" below — a buyer
+  // wants to know if the team they're looking at is currently advancing.
+  // Scoped to just those ~50 teams' pods (cheap), same pattern as the main
+  // leaderboard — see src/lib/advancement.ts for why this can't just be
+  // read off SBS's own `_rank` field.
+  const recentSalesPodKeysSeen = new Set<string>();
+  const recentSalesPodKeys: PodKey[] = [];
+  for (const s of recentSales) {
+    const key = `${s.team.level}::${s.team.leagueName}`;
+    if (recentSalesPodKeysSeen.has(key)) continue;
+    recentSalesPodKeysSeen.add(key);
+    recentSalesPodKeys.push({ level: s.team.level, leagueName: s.team.leagueName });
+  }
+  const podRankByCard = podRankByCardId(await getPodRanks(season.slug, recentSalesPodKeys));
+
   return (
     <main>
       <h1 className="mb-1 text-2xl font-bold">Trades</h1>
@@ -382,6 +398,7 @@ export default async function TradesPage({
               <thead className="bg-ink-800 text-zinc-400">
                 <tr>
                   <th className="px-3 py-2">Team</th>
+                  <th className="px-3 py-2">Pod</th>
                   <th className="px-3 py-2">From</th>
                   <th className="px-3 py-2">To</th>
                   <th className="px-3 py-2 text-right">Price</th>
@@ -398,6 +415,18 @@ export default async function TradesPage({
                       >
                         {s.team.leagueName} · #{s.teamCardId}
                       </Link>
+                    </td>
+                    <td className="px-3 py-2">
+                      {(() => {
+                        const pr = podRankByCard.get(s.teamCardId);
+                        if (!pr || pr.podRank == null) return <span className="text-zinc-500">—</span>;
+                        return (
+                          <span className={pr.advancing ? "text-banana-400" : "text-zinc-400"}>
+                            {ordinal(pr.podRank)}/{pr.podSize}
+                            {pr.advancing && " ↑"}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2">
                       <Link href={`/owner/${s.fromWallet}`} className="text-zinc-400 hover:text-banana-400">
