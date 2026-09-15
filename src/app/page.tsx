@@ -184,9 +184,22 @@ export default async function LeaderboardPage({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {rows.map((r, i) => (
               <tr key={r.teamCardId} className="border-t border-ink-600 hover:bg-ink-800/60">
-                <td className="px-3 py-2 text-zinc-400">{r.rank ?? "—"}</td>
+                {/* SBS's own stored `rank` field turns out to be PER-LEVEL, not
+                    global across levels (confirmed 2026-09-15: on the "All"
+                    view it shows e.g. two different teams both at rank 1, one
+                    Pro and one HOF) — so displaying it directly produces
+                    duplicate numbers whenever more than one level is mixed
+                    together. This table's actual row order is always a total
+                    order already (by season/weekly score, or by the raw rank
+                    field when that's the sort column, ties broken by
+                    teamCardId isn't guaranteed but rows are still distinct),
+                    so showing the row's 1-based position here is always
+                    duplicate-free and matches what "Rank" means in a
+                    leaderboard: where this row sits in the list you're
+                    looking at right now. */}
+                <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
                 <td className="px-3 py-2">
                   <Link href={`/owner/${r.team.ownerWallet}`} className="hover:text-banana-400">
                     {r.team.owner.displayName ?? shortWallet(r.team.ownerWallet)}
