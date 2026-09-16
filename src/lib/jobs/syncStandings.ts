@@ -105,9 +105,78 @@ export async function runSyncStandings() {
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
     const rows = [...rowsByCardId.values()];
-    log(`[sync-standings] found ${rows.length} scored teams across ${hitPods} live pods, fetching owner profiles...`);
+    log(`[sync-standings] found ${rows.length} scored teams across ${hitPods} live pods, resolving synthetic pick ids...`);
 
-    const wallets = [...new Set(rows.map((r) => r.ownerWallet))];
+    // Wheel/Promo/Banana-Race picks: when SBS hasn't linked a pick to its
+    // real minted NFT token yet, /api/standings returns a synthetic
+    // per-pick cardId (e.g. "special-1783561176466-0") instead of the real
+    // token id — getFullStandings()'s realTokenId-first extraction can't
+    // help here because SBS's response just doesn't have a realTokenId for
+    // these yet. Writing a score straight under that synthetic id used to
+    // create a "phantom" Team row that the cleanup step below deletes every
+    // run, silently throwing the score away with it — it never reached the
+    // REAL Team row (the one scripts/sync-collection.ts already created
+    // under the real minted token id, discovered independently via
+    // OpenSea). Confirmed live 2026-09-15: AceJohn's real cardId 2060
+    // ("Jackpot #26 (from Wheel)") shows a genuine 200.78 season score on
+    // sbsfantasy.com, filed under pick id "special-1783561176466-0" — our
+    // DB never saw it because of exactly this.
+    //
+    // Fix: a synthetic pick and its real card are the same team, so they
+    // share the same pod (`leagueId`, i.e. SBS's own `_leagueId` — stable
+    // regardless of which sync/endpoint discovered the Team row) and the
+    // same owner, and a pod only has one pick per owner — so
+    // (leagueId, ownerWallet) is enough to find the real cardId already
+    // sitting in our Team table and redirect the score onto it instead.
+    const specialRows = rows.filter((r) => r.cardId.startsWith("special-"));
+    if (specialRows.length > 0) {
+      const candidateWallets = [...new Set(specialRows.map((r) => r.ownerWallet))];
+      const candidates = await prisma.team.findMany({
+        where: { seasonSlug: season.slug, ownerWallet: { in: candidateWallets }, status: { not: "draft_pass" } },
+        select: { cardId: true, leagueId: true, ownerWallet: true },
+      });
+      const byPodOwner = new Map<string, string[]>();
+      for (const c of candidates) {
+        const key = `${c.leagueId}::${c.ownerWallet}`;
+        const arr = byPodOwner.get(key);
+        if (arr) arr.push(c.cardId);
+        else byPodOwner.set(key, [c.cardId]);
+      }
+      let resolved = 0;
+      for (const row of specialRows) {
+        const matches = byPodOwner.get(`${row.leagueId}::${row.ownerWallet}`) ?? [];
+        if (matches.length === 1) {
+          row.cardId = matches[0]; // mutates in place — same object rowsByCardId/rows already hold
+          resolved++;
+        }
+        // 0 matches: real card not minted/synced yet (sync-collection.ts
+        // will pick it up eventually, and the NEXT standings run will
+        // resolve it then). >1 matches: genuinely ambiguous — in either
+        // case, leave row.cardId as "special-*" so it gets filtered out
+        // below rather than risk attaching the score to the wrong team.
+      }
+      log(
+        `[sync-standings] resolved ${resolved}/${specialRows.length} synthetic pick ids to real cards ` +
+          `(${specialRows.length - resolved} left unmatched — not minted/synced yet, or ambiguous)`,
+      );
+    }
+
+    // Drop whatever's still under a synthetic id (unresolved above) instead
+    // of writing it — same reasoning the old phantom-row cleanup below was
+    // patching up after the fact, just done BEFORE writing instead of
+    // after deleting. Re-dedupe by the now-real cardId too: extremely
+    // unlikely for two rows to resolve to the same card, but cheap to
+    // guard against (keep whichever has the higher season score).
+    const finalRowsByCardId = new Map<string, SbsStandingsRow>();
+    for (const row of rows) {
+      if (row.cardId.startsWith("special-")) continue;
+      const existing = finalRowsByCardId.get(row.cardId);
+      if (!existing || row.seasonScore > existing.seasonScore) finalRowsByCardId.set(row.cardId, row);
+    }
+    const finalRows = [...finalRowsByCardId.values()];
+    log(`[sync-standings] ${finalRows.length} rows ready to write (fetching owner profiles...)`);
+
+    const wallets = [...new Set(finalRows.map((r) => r.ownerWallet))];
     const profiles: Record<string, Awaited<ReturnType<typeof getUserProfiles>>[string]> = {};
     const PROFILE_BATCH = 50;
     for (let i = 0; i < wallets.length; i += PROFILE_BATCH) {
@@ -124,16 +193,26 @@ export async function runSyncStandings() {
         log(`[sync-standings] profile batch ${i}/${wallets.length} failed, continuing without it: ${String(err)}`);
       }
     }
-    log(`[sync-standings] profiles fetched, writing ${rows.length} rows to DB...`);
+    log(`[sync-standings] profiles fetched, writing ${finalRows.length} rows to DB...`);
 
     // Same batching rationale as syncLeaderboard.ts: owners first (de-duped,
     // sequential batches, to avoid two teams owned by the same wallet racing
     // to create the same Owner row), then team+score rows in parallel
-    // batches (safe — `rows` is already de-duped by cardId).
-    const WRITE_BATCH = 15;
+    // batches (safe — `finalRows` is already de-duped by (real) cardId).
+    //
+    // Lowered from 15 after the project flipped to "unhealthy" on Supabase's
+    // free tier mid-run on 2026-09-16 (both a local run and the GitHub
+    // Actions cron run failed with "Can't reach database server" around the
+    // same time) — Supabase's own logs showed no errors and normal
+    // checkpoint activity once it recovered, consistent with the free
+    // tier's small shared compute getting overwhelmed by ~13,700 rows'
+    // worth of sustained 15-wide parallel upserts rather than any actual
+    // outage. 5 keeps meaningful pipelining without hitting the DB as hard;
+    // override with STANDINGS_SYNC_WRITE_BATCH if it needs further tuning.
+    const WRITE_BATCH = Number(process.env.STANDINGS_SYNC_WRITE_BATCH ?? 5);
 
     const ownersByWallet = new Map<string, SbsStandingsRow>();
-    for (const row of rows) {
+    for (const row of finalRows) {
       if (!ownersByWallet.has(row.ownerWallet)) ownersByWallet.set(row.ownerWallet, row);
     }
     const uniqueOwners = [...ownersByWallet.values()];
@@ -171,8 +250,8 @@ export async function runSyncStandings() {
     log(`[sync-standings] wrote ${uniqueOwners.length} owners, writing team + score rows...`);
 
     let written = 0;
-    for (let i = 0; i < rows.length; i += WRITE_BATCH) {
-      const batch = rows.slice(i, i + WRITE_BATCH);
+    for (let i = 0; i < finalRows.length; i += WRITE_BATCH) {
+      const batch = finalRows.slice(i, i + WRITE_BATCH);
       await Promise.all(
         batch.map(async (row) => {
           await prisma.team.upsert({
@@ -217,25 +296,29 @@ export async function runSyncStandings() {
         }),
       );
       if ((i + WRITE_BATCH) % 150 < WRITE_BATCH) {
-        log(`[sync-standings] wrote ${Math.min(i + WRITE_BATCH, rows.length)}/${rows.length} team+score rows...`);
+        log(`[sync-standings] wrote ${Math.min(i + WRITE_BATCH, finalRows.length)}/${finalRows.length} team+score rows...`);
       }
     }
 
     log(`[sync-standings] wrote ${written} rows, cleaning up phantom rows...`);
 
-    // One-time (per run, effectively self-limiting after the first) cleanup
-    // for a now-fixed bug: getFullStandings() used to key legacy promo/
-    // Wheel/Banana-Race picks (JackHOF/HOF "from ..." pods, under the
-    // 2025-slow-draft- prefix) by SBS's synthetic per-pick `_cardId`
-    // (e.g. "special-1788005018303-966d3b") instead of `card.realTokenId`
-    // (the actual NFT token id). That wrote real scores under a cardId
-    // that never matched the real, OpenSea-sourced Team row for that
-    // token — so the real team showed no score, AND a phantom Team row
-    // (no roster, no image, since OpenSea sync never creates one for a
-    // fake id) piled up here every run. The extraction is fixed above;
-    // this deletes whatever phantom rows already accumulated before the
-    // fix, for THIS season only. Children first (FK is ON DELETE
-    // RESTRICT) — safe to re-run: matches 0 rows once cleaned up.
+    // One-time (per run, effectively self-limiting after the first) sweep
+    // for phantom Team rows that accumulated BEFORE the synthetic-pick-id
+    // resolution step above existed: every run of this job used to upsert
+    // a Team + ScoreSnapshot straight under SBS's synthetic per-pick
+    // `_cardId` (e.g. "special-1788005018303-966d3b") for any Wheel/Promo/
+    // Banana-Race pick /api/standings hadn't linked to a real minted token
+    // yet — creating a Team row (no roster, no image, since OpenSea sync
+    // never creates one for a fake id) that never matched the real,
+    // OpenSea-sourced Team row for that same pick, so the real team showed
+    // no score. The resolution step above now catches this BEFORE writing
+    // (matching by pod + owner and redirecting the score onto the real
+    // cardId, or skipping it if no real Team row exists yet) — so no NEW
+    // phantom rows should appear here going forward. This cleanup now
+    // exists only to sweep whatever phantom rows already accumulated
+    // before that fix landed (2026-09-15), for THIS season only, plus
+    // defense-in-depth for any future edge case. Children first (FK is ON
+    // DELETE RESTRICT) — safe to re-run: matches 0 rows once cleaned up.
     const phantomWhere = { seasonSlug: season.slug, cardId: { startsWith: "special-" } };
     const phantomTeams = await prisma.team.findMany({ where: phantomWhere, select: { cardId: true } });
     if (phantomTeams.length > 0) {
