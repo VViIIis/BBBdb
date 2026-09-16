@@ -29,15 +29,25 @@ import { runSyncStandings } from "../src/lib/jobs/syncStandings";
 // Raised from an initial 9 minutes after a real run showed why that was too
 // tight: sbsfantasy.com rate-limited the crawl hard enough that retry
 // backoff (see withRetry() in syncStandings.ts) added several minutes on
-// its own, and then writing ~13,810 team+score rows (2 upserts each, 15 at
-// a time) to a remote pooled Postgres took several minutes more — the
-// watchdog fired mid-write, having only gotten through 5,400/13,810 rows.
-// Nothing was corrupted (every write that DID complete is a real upsert
-// already committed — a partial run just means the next run has more left
-// to do), but the run itself needs real headroom to finish clean. 20
-// minutes leaves comfortable margin under the GitHub Actions workflow's own
-// `timeout-minutes: 25` (see .github/workflows/sync-standings.yml).
-const WATCHDOG_MS = 20 * 60 * 1000;
+// its own, and then writing ~13,810 team+score rows (2 upserts each) to a
+// remote pooled Postgres took several minutes more.
+//
+// Raised AGAIN 2026-09-16, from 20 to 40 minutes, alongside lowering
+// syncStandings.ts's WRITE_BATCH (15 -> 5): that change was to stop
+// overwhelming the Supabase free-tier project's compute (a burst of
+// 15-wide parallel upserts had been pushing the project into an
+// "unhealthy" state mid-run — see that file's own comment). It worked —
+// the very next run had zero DB connection errors — but 5-wide batches
+// naturally take longer for the same ~13,800 rows, and the OLD 20-minute
+// watchdog fired mid-write (having only gotten through 5,850/13,808 rows)
+// before the run could finish clean. Nothing was corrupted either time
+// (every write that DID complete is a real upsert already committed — a
+// partial run just means the next run has more left to do), but the run
+// itself needs real headroom to finish. 40 minutes leaves comfortable
+// margin under the GitHub Actions workflow's own `timeout-minutes: 50`
+// (see .github/workflows/sync-standings.yml) — keep that outer timeout
+// comfortably above this one if either needs adjusting again.
+const WATCHDOG_MS = 40 * 60 * 1000;
 const watchdog = setTimeout(() => {
   writeSync(2, `[sync-standings] WATCHDOG: still running after ${WATCHDOG_MS}ms, forcing exit\n`);
   process.exit(1);
