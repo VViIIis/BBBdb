@@ -166,3 +166,52 @@ model SyncLog {
   ok          Boolean  @default(false)
   errorText   String?
 }
+
+// --- SBS "Team Positions" box scores (/scores tab) ---
+//
+// Unrelated to Season/Team/Owner above (this is real-NFL data, not SBS draft
+// data): one row per real NFL game, keyed by ESPN's own event id so re-syncs
+// are trivial upserts. "week"/"season" here are ESPN's own NFL week/season
+// numbering (e.g. season=2026, week=2), NOT an SBS Season.slug — the two
+// numbering schemes are unrelated and this feature doesn't need SBS's at
+// all. See src/lib/sbsScoring.ts for the actual Team Positions scoring math,
+// and src/lib/jobs/syncScores.ts for why only FINAL games ever get
+// TeamPositionScore rows (see that file's docblock: final-box-score-only by
+// design, not a live in-game feed).
+model NflGame {
+  espnEventId  String    @id // ESPN's own event id, e.g. "401872932" — stable across the game's lifecycle, used to re-fetch/re-sync idempotently
+  season       Int // e.g. 2026
+  week         Int // ESPN's NFL week number within that season/seasonType
+  seasonType   Int // ESPN's seasonType: 1=preseason, 2=regular, 3=postseason
+  kickoff      DateTime
+  awayTeam     String // team abbreviation, e.g. "DET"
+  homeTeam     String // e.g. "BUF"
+  awayScore    Int?
+  homeScore    Int?
+  status       String // "scheduled" | "in" | "final" — mirrors ESPN's status.type.state, collapsed to these three
+  lastSyncedAt DateTime  @updatedAt
+  slots        TeamPositionScore[]
+
+  @@index([season, week])
+  @@index([status])
+}
+
+// One row per (game, real NFL team, SBS position slot) — e.g. (this game,
+// "BUF", "RB1") -> James Cook III, 23.9 pts. Only written once a game's
+// status is "final" (see NflGame's docblock); a slot with no qualifying
+// player (e.g. a team that only dressed one healthy RB) is still written,
+// with playerName null and points 0, so the box score card always has a
+// complete 7-slot lineup rather than a silently missing row.
+model TeamPositionScore {
+  id         String  @id @default(cuid())
+  gameId     String
+  game       NflGame @relation(fields: [gameId], references: [espnEventId])
+  team       String // the real NFL team abbreviation this slot belongs to (matches NflGame.awayTeam or .homeTeam)
+  slot       String // "QB" | "RB1" | "RB2" | "WR1" | "WR2" | "TE" | "DST" — no WR3/RB3/etc: SBS's own starting lineup only has 2 RB + 2 WR + 1 TE slots, see sbsScoring.ts
+  playerName String?
+  statLine   String // short human-readable summary, e.g. "248 pass yd, 3 TD · 69 rush yd, 2 TD" — precomputed at sync time so the page never needs per-slot formatting logic
+  points     Float
+
+  @@unique([gameId, team, slot])
+  @@index([gameId])
+}

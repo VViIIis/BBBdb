@@ -1,0 +1,37 @@
+name: Sync NFL scores (SBS Team Positions box scores)
+
+# Powers /scores: pulls the current + previous NFL week's games from ESPN's
+# public site API and, for any game that just went final, computes SBS's
+# "Team Positions" box score (see src/lib/sbsScoring.ts for the scoring math
+# and src/lib/jobs/syncScores.ts for the sync logic/docblock). FINAL box
+# scores only, by design — not a live in-game feed — so this only needs to
+# run a handful of times a day, not every few minutes.
+#
+# Every 3 hours covers NFL kickoff/finish windows (early Sunday games are
+# usually final by ~4pm ET, late games by ~7:30pm, SNF by ~11:30pm, MNF the
+# next day) without hammering ESPN's undocumented endpoint. Offset to 22
+# minutes past the hour so it doesn't collide with the other sync jobs'
+# scheduled minutes (17, 47).
+#
+# Needs the same DATABASE_URL secret as the other sync workflows — no other
+# secrets (ESPN's site API needs no auth).
+
+on:
+  schedule:
+    - cron: "22 */3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync-scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run sync:scores
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
