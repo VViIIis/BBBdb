@@ -140,7 +140,7 @@ export default async function LeaderboardPage({
           <input
             type="text"
             name="q"
-            placeholder="Find a team by username..."
+            placeholder="Username, wallet, or card #..."
             className="w-full rounded-lg border border-ink-600 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-banana-400"
           />
           <button
