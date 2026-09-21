@@ -13,14 +13,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <div className="mx-auto max-w-5xl px-4 py-6">
-          <header className="mb-6 flex items-center justify-between">
+          {/* Stacks logo-over-nav on narrow screens (sm:flex-row restores the
+              single-row layout once there's room) — with 7 nav links, forcing
+              everything onto one row alongside the logo is what was causing
+              the tabs to overlap/get clipped on mobile. flex-wrap lets the
+              nav break onto a second line instead of overflowing. */}
+          <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <a href="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
               <span aria-hidden>🍌</span>
               <span>
                 BBB<span className="text-banana-400">db</span>
               </span>
             </a>
-            <nav className="flex gap-4 text-sm text-zinc-400">
+            <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-zinc-400">
               <a href="/" className="hover:text-banana-400">
                 Leaderboard
               </a>
