@@ -40,14 +40,23 @@ import { runSyncStandings } from "../src/lib/jobs/syncStandings";
 // the very next run had zero DB connection errors — but 5-wide batches
 // naturally take longer for the same ~13,800 rows, and the OLD 20-minute
 // watchdog fired mid-write (having only gotten through 5,850/13,808 rows)
-// before the run could finish clean. Nothing was corrupted either time
-// (every write that DID complete is a real upsert already committed — a
-// partial run just means the next run has more left to do), but the run
-// itself needs real headroom to finish. 40 minutes leaves comfortable
-// margin under the GitHub Actions workflow's own `timeout-minutes: 50`
-// (see .github/workflows/sync-standings.yml) — keep that outer timeout
-// comfortably above this one if either needs adjusting again.
-const WATCHDOG_MS = 40 * 60 * 1000;
+// before the run could finish clean.
+//
+// Raised AGAIN 2026-09-23, from 40 to 75 minutes: 40 minutes turned out to
+// be an underestimate, not a fix — a real run got to 11,550/13,727 rows
+// (84%) before the watchdog fired, which works out to the SAME ~289
+// rows/min write rate the 2026-09-16 run showed (5,850/20min). At that
+// rate the full write loop alone needs ~47.5 minutes, before even counting
+// the ~1500-call discovery walk and owner-upsert batches that run before
+// it — so 40 minutes was always going to come up short, it just took until
+// the roster grew enough to notice. 75 minutes leaves real headroom (not
+// just enough for today's ~13,700 rows, but room to keep growing for a
+// while) rather than another marginal bump that needs revisiting again in
+// a few weeks. Keep .github/workflows/sync-standings.yml's own
+// `timeout-minutes` comfortably above this one if either needs adjusting
+// again (GitHub Actions' hosted-runner hard cap is 360 minutes, so there's
+// plenty of room).
+const WATCHDOG_MS = 75 * 60 * 1000;
 const watchdog = setTimeout(() => {
   writeSync(2, `[sync-standings] WATCHDOG: still running after ${WATCHDOG_MS}ms, forcing exit\n`);
   process.exit(1);
