@@ -13,7 +13,8 @@ name: Sync SBS marketplace sales
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    # Every hour, offset 30min from sync.yml so they don't collide.
+    - cron: "30 * * * *"
   workflow_dispatch: {}
 
 jobs:

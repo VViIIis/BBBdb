@@ -19,7 +19,7 @@ name: Sync SBS native marketplace trades
 
 on:
   schedule:
-    - cron: "47 */2 * * *"
+    - cron: "47 */4 * * *"
   workflow_dispatch: {}
 
 jobs:
