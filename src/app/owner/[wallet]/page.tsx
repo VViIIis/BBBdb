@@ -75,6 +75,14 @@ export default async function OwnerPage({
 
   let advancingCount = 0;
   let scoredForRate = 0;
+  // How many of this owner's teams sit in each pod-rank slot (1st, 2nd,
+  // 3rd, ...) this season — the same "N teams in Nth place" breakdown SBS
+  // added to its own Teams page, just built from the pod ranks we already
+  // compute for the "Pod" column/Advancing stat below rather than a new
+  // data source. Keyed by rank number (not "Nth of 10" vs "Nth of 9" —
+  // pod size varies team to team, same as SBS's own version doesn't split
+  // by pod size either).
+  const rankTally = new Map<number, number>();
   if (selectedSlug) {
     const seenCardIds = new Set<string>();
     for (const t of teams) {
@@ -84,9 +92,11 @@ export default async function OwnerPage({
       if (pr?.podRank != null) {
         scoredForRate++;
         if (pr.advancing) advancingCount++;
+        rankTally.set(pr.podRank, (rankTally.get(pr.podRank) ?? 0) + 1);
       }
     }
   }
+  const rankTallyEntries = [...rankTally.entries()].sort((a, b) => a[0] - b[0]);
 
   return (
     <main>
@@ -174,6 +184,21 @@ export default async function OwnerPage({
           </div>
         )}
       </div>
+
+      {selectedSlug && rankTallyEntries.length > 0 && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {rankTallyEntries.map(([rank, count]) => (
+            <span
+              key={rank}
+              className={`rounded-full px-3 py-1 text-sm ${
+                rank <= 2 ? "bg-banana-400/10 font-semibold text-banana-400" : "bg-ink-800 text-zinc-300"
+              }`}
+            >
+              {ordinal(rank)} in pod · {count}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-ink-600">
         <table className="w-full min-w-[560px] text-left text-sm">
