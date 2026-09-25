@@ -253,8 +253,34 @@ export default async function LeaderboardPage({
                       looking at right now. */}
                   <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
                   <td className="px-3 py-2">
-                    <Link href={`/owner/${r.team.ownerWallet}`} className="hover:text-banana-400">
-                      {r.team.owner.displayName ?? shortWallet(r.team.ownerWallet)}
+                    <Link
+                      href={`/owner/${r.team.ownerWallet}`}
+                      className="flex items-center gap-2 hover:text-banana-400"
+                    >
+                      {/* Owner.imageUrl is the owner's SBS profile picture,
+                          already synced from SBS's own profile API by
+                          syncStandings/syncLeaderboard. Owners who never set
+                          one get a banana, which is SBS's own default too.
+                          Plain <img> rather than next/image, same as the
+                          owner page: these are tiny, and it avoids having to
+                          allowlist every host SBS might serve them from. */}
+                      {r.team.owner.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={r.team.owner.imageUrl}
+                          alt=""
+                          loading="lazy"
+                          className="h-7 w-7 shrink-0 rounded-full border border-ink-600 object-cover"
+                        />
+                      ) : (
+                        <span
+                          aria-hidden
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-ink-600 bg-ink-800 text-sm"
+                        >
+                          🍌
+                        </span>
+                      )}
+                      <span>{r.team.owner.displayName ?? shortWallet(r.team.ownerWallet)}</span>
                     </Link>
                   </td>
                   <td className="px-3 py-2 text-zinc-400">
