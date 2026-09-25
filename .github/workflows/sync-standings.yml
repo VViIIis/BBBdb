@@ -14,8 +14,15 @@ name: Sync SBS full standings (all pods, not just top-500)
 
 on:
   schedule:
-    - cron: "17 */4 * * *"
+    - cron: "17 */2 * * *"
   workflow_dispatch: {}
+
+# A run can take up to ~75 min and GitHub's cron often fires late, so two
+# runs could overlap on a 2h cadence. This queues the second one instead
+# of running both at once and doubling the DB write load.
+concurrency:
+  group: sync-standings
+  cancel-in-progress: false
 
 jobs:
   sync-standings:
