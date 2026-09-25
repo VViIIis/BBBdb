@@ -61,7 +61,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Built by{" "}
                 <span className="font-semibold text-zinc-300">VViIIis.eth</span> — like the site?
                 Tip a banana 🍌{" "}
-                <span className="font-mono text-zinc-300">VViIIis.eth</span>
+                <span className="font-mono text-zinc-300">VViIIis.eth</span> or{" "}
+                <a
+                  href="https://buymeacoffee.com/vviiiis"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-zinc-300 hover:text-banana-400"
+                >
+                  buy me a coffee ☕
+                </a>
               </p>
             </div>
             Unofficial fan project. Not affiliated with SBS / Spoiled Banana Society. Data sourced
