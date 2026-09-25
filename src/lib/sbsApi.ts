@@ -229,6 +229,38 @@ export async function getUserProfiles(
 }
 
 /**
+ * Which of these tokens are in a "Founder" draft. Founder drafts are the
+ * streamed drafts SBS runs itself — normal 10-team pods where every team is
+ * tagged as a founder team. SBS doesn't expose this as a level anywhere:
+ * /api/standings, /api/leaderboard and the NFT's own LEVEL trait all say
+ * "Pro" for these teams. The only place the tag lives is this endpoint,
+ * which sbsfantasy.com's own Teams page calls to draw its founder badge.
+ *
+ * Confirmed live 2026-09-25: POSTing {tokens:[{tokenId, owner, leagueId}]}
+ * returns {founderTokenIds: ["50", "152", ...]}. The whole pod is always
+ * tagged (all 10 teams of 2026-fast-draft-8 "BBB #9" and 2026-fast-draft-51
+ * "BBB #54" came back). Each token needs at least an owner or a leagueId —
+ * a bare tokenId always comes back empty, so pass both.
+ */
+export async function getFounderTokenIds(
+  tokens: { tokenId: string; owner: string | null; leagueId?: string }[],
+): Promise<Set<string>> {
+  if (tokens.length === 0) return new Set();
+  const res = await fetch(`${BASE_URL}/api/founder-drafts/by-tokens`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ tokens }),
+    cache: "no-store",
+  });
+  if (isRateLimitStatus(res.status)) {
+    throw Object.assign(new Error("SBS API founder-drafts/by-tokens -> HTTP 429 (rate limited)"), { rateLimited: true });
+  }
+  if (!res.ok) throw new Error(`SBS API founder-drafts/by-tokens -> HTTP ${res.status}`);
+  const data = (await res.json()) as { founderTokenIds?: (string | number)[] };
+  return new Set((data.founderTokenIds ?? []).map(String));
+}
+
+/**
  * SBS's own IN-APP marketplace (sbsfantasy.com's "Marketplace" tab) is a
  * completely separate venue from OpenSea — teams can be bought/sold there
  * directly, on-chain, WITHOUT ever appearing on OpenSea. Discovered this the

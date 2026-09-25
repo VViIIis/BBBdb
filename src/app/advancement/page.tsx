@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OwnerAvatar from "@/components/OwnerAvatar";
 import { prisma } from "@/lib/db";
 import SeasonTabs from "@/components/SeasonTabs";
 import { getAllSeasons, resolveSeason } from "@/lib/seasons";
@@ -208,8 +209,9 @@ export default async function AdvancementPage({
                 <tr key={r.ownerWallet} className="border-t border-ink-600 hover:bg-ink-800/60">
                   <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
                   <td className="px-3 py-2">
-                    <Link href={`/owner/${r.ownerWallet}`} className="hover:text-banana-400">
-                      {owner?.displayName ?? shortWallet(r.ownerWallet)}
+                    <Link href={`/owner/${r.ownerWallet}`} className="flex items-center gap-2 hover:text-banana-400">
+                      <OwnerAvatar imageUrl={owner?.imageUrl} />
+                      <span>{owner?.displayName ?? shortWallet(r.ownerWallet)}</span>
                     </Link>
                   </td>
                   <td className="px-3 py-2 text-right font-mono">{r.advancing}</td>

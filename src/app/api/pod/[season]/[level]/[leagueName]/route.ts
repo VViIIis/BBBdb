@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { REGULAR_SEASON_SNAPSHOTS } from "@/lib/advancement";
 
 /**
  * Pod standings. See src/app/pod/[season]/[level]/[leagueName]/page.tsx for
@@ -15,7 +16,7 @@ export async function GET(
 
   const teams = await prisma.team.findMany({
     where: { seasonSlug: params.season, level, leagueName },
-    include: { owner: true, scores: { orderBy: { capturedAt: "desc" }, take: 1 } },
+    include: { owner: true, scores: { where: REGULAR_SEASON_SNAPSHOTS, orderBy: { capturedAt: "desc" }, take: 1 } },
   });
 
   if (teams.length === 0) {

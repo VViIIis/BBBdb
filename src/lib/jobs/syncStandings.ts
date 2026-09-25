@@ -1,6 +1,14 @@
 import { writeSync } from "fs";
 import { prisma } from "@/lib/db";
-import { DRAFT_ID_RANGES, getCurrentGameweek, getFullStandings, getUserProfiles, SbsStandingsRow } from "@/lib/sbsApi";
+import { currentOwner, loadSaleHistory } from "@/lib/ownership";
+import {
+  DRAFT_ID_RANGES,
+  getCurrentGameweek,
+  getFounderTokenIds,
+  getFullStandings,
+  getUserProfiles,
+  SbsStandingsRow,
+} from "@/lib/sbsApi";
 
 // Same rationale as syncLeaderboard.ts: writeSync bypasses stdout buffering
 // so a checkpoint log actually lands before a hang/timeout kills the process.
@@ -174,6 +182,62 @@ export async function runSyncStandings() {
       if (!existing || row.seasonScore > existing.seasonScore) finalRowsByCardId.set(row.cardId, row);
     }
     const finalRows = [...finalRowsByCardId.values()];
+
+    // SBS's API can still name the seller after a marketplace sale — correct
+    // it from our own sale records (see src/lib/ownership.ts). Done before
+    // the profile fetch so the buyer's name/avatar get pulled too.
+    const saleHistory = await loadSaleHistory(season.slug);
+    let ownerFixes = 0;
+    for (const row of finalRows) {
+      const owner = currentOwner(saleHistory, row.cardId, row.ownerWallet);
+      if (owner !== row.ownerWallet) {
+        row.ownerWallet = owner;
+        ownerFixes++;
+      }
+    }
+    log(`[sync-standings] corrected owner on ${ownerFixes} recently-sold teams SBS still lists under the seller`);
+
+    // Founder drafts: SBS reports these teams as "Pro" everywhere except its
+    // founder-drafts endpoint (see getFounderTokenIds in sbsApi.ts), which is
+    // why the site's Founder tab was always empty. Look them up and store
+    // level "Founder" so they show up there. The whole pod is always tagged,
+    // so pod grouping (level + leagueName) still keeps all 10 teams together.
+    //
+    // Non-fatal, like the profile fetch below: if a batch fails, fall back to
+    // whatever was already tagged Founder in the DB, so one bad request
+    // doesn't flip those teams back to "Pro" until the next run.
+    const founderIds = new Set<string>();
+    let founderLookupFailed = false;
+    const FOUNDER_BATCH = 500;
+    for (let i = 0; i < finalRows.length; i += FOUNDER_BATCH) {
+      const batch = finalRows.slice(i, i + FOUNDER_BATCH).map((r) => ({
+        tokenId: r.cardId,
+        owner: r.ownerWallet,
+        leagueId: r.leagueId,
+      }));
+      try {
+        for (const id of await withRetry(() => getFounderTokenIds(batch), `founder batch ${i}`)) founderIds.add(id);
+      } catch (err) {
+        founderLookupFailed = true;
+        log(`[sync-standings] founder lookup batch ${i} failed, keeping existing Founder tags: ${String(err)}`);
+      }
+    }
+    if (founderLookupFailed) {
+      const existing = await prisma.team.findMany({
+        where: { seasonSlug: season.slug, level: "Founder" },
+        select: { cardId: true },
+      });
+      for (const t of existing) founderIds.add(t.cardId);
+    }
+    let founderCount = 0;
+    for (const row of finalRows) {
+      if (founderIds.has(row.cardId)) {
+        row.level = "Founder";
+        founderCount++;
+      }
+    }
+    log(`[sync-standings] tagged ${founderCount} founder-draft teams`);
+
     log(`[sync-standings] ${finalRows.length} rows ready to write (fetching owner profiles...)`);
 
     const wallets = [...new Set(finalRows.map((r) => r.ownerWallet))];

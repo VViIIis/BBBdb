@@ -1,5 +1,6 @@
 import { writeSync } from "fs";
 import { prisma } from "@/lib/db";
+import { currentOwner, loadSaleHistory } from "@/lib/ownership";
 import { getCurrentGameweek, getLeaderboard, getUserProfiles, parseTeamName } from "@/lib/sbsApi";
 
 // Plain console.log can sit in an unflushed buffer when stdout is piped (as
@@ -63,6 +64,20 @@ export async function runSyncLeaderboard() {
     }
     const rows = [...rowsByCardId.values()];
 
+    // Same stale-seller correction as syncStandings.ts (src/lib/ownership.ts).
+    // When the owner changes, drop the API's username too — it's the
+    // seller's name, and must not end up on the buyer's Owner row.
+    const saleHistory = await loadSaleHistory(season.slug);
+    for (const row of rows) {
+      const { cardId } = parseTeamName(row.teamName);
+      if (!cardId) continue;
+      const owner = currentOwner(saleHistory, cardId, row.ownerWallet);
+      if (owner !== row.ownerWallet.toLowerCase()) {
+        row.ownerWallet = owner;
+        row.username = "";
+      }
+    }
+
     const wallets = [...new Set(rows.map((r) => r.ownerWallet))];
     log(`[sync] fetching profiles for ${wallets.length} wallets...`);
     const profiles: Record<string, Awaited<ReturnType<typeof getUserProfiles>>[string]> = {};
@@ -97,7 +112,7 @@ export async function runSyncLeaderboard() {
             where: { wallet: row.ownerWallet },
             create: {
               wallet: row.ownerWallet,
-              displayName: profile?.displayName ?? row.username,
+              displayName: profile?.displayName ?? (row.username || undefined),
               imageUrl: profile?.imageUrl ?? null,
               equippedBadge: profile?.equippedBadge ?? null,
               ripenessTier: profile?.ripeness?.tier ?? null,
@@ -105,7 +120,7 @@ export async function runSyncLeaderboard() {
               ripenessCount: profile?.ripeness?.count ?? null,
             },
             update: {
-              displayName: profile?.displayName ?? row.username,
+              displayName: profile?.displayName ?? (row.username || undefined),
               imageUrl: profile?.imageUrl ?? null,
               equippedBadge: profile?.equippedBadge ?? null,
               ripenessTier: profile?.ripeness?.tier ?? null,
@@ -117,6 +132,19 @@ export async function runSyncLeaderboard() {
       );
     }
     log(`[sync] wrote ${uniqueOwners.length} owners, writing team + score rows...`);
+
+    // Founder-draft teams come back as "Pro" from /api/leaderboard.
+    // syncStandings.ts looks up the real Founder tag (see getFounderTokenIds
+    // in sbsApi.ts); this hourly job doesn't, so it must not overwrite that
+    // tag with "Pro" in between full runs.
+    const founderCardIds = new Set(
+      (
+        await prisma.team.findMany({
+          where: { seasonSlug: season.slug, level: "Founder" },
+          select: { cardId: true },
+        })
+      ).map((t) => t.cardId),
+    );
 
     let written = 0;
     for (let i = 0; i < rows.length; i += WRITE_BATCH) {
@@ -141,7 +169,7 @@ export async function runSyncLeaderboard() {
             update: {
               leagueId: row.leagueId,
               leagueName: leaguePrefix,
-              level: row.level,
+              level: founderCardIds.has(cardId) ? "Founder" : row.level,
               ownerWallet: row.ownerWallet,
             },
           });

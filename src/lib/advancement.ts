@@ -1,4 +1,21 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+
+/**
+ * Pods are decided by weeks 1-14. Weeks 15-17 are the playoffs, where SBS
+ * resets season score to count only the playoff weeks (confirmed on BBB III:
+ * the champion's week 17 "season" score is 626.22 = weeks 15+16+17). If pod
+ * ranking used a team's latest snapshot, every team that advanced would be
+ * ranked by that much smaller playoff total and drop below teams that were
+ * eliminated. So anything ranking a week 1-14 pod filters these out.
+ */
+export const REGULAR_SEASON_SNAPSHOTS = {
+  NOT: [
+    { gameweek: { endsWith: "REG-15" } },
+    { gameweek: { endsWith: "REG-16" } },
+    { gameweek: { endsWith: "REG-17" } },
+  ],
+} satisfies Prisma.ScoreSnapshotWhereInput;
 
 /**
  * Pod advancement rules, confirmed against sbsfantasy.com/faq (2026-09-15)
@@ -129,7 +146,7 @@ export async function getPodRanks(seasonSlug: string, pods?: PodKey[]): Promise<
   const latestByCard = new Map<string, { weeklyScore: number; seasonScore: number }>();
   if (cardIds.length > 0) {
     const scores = await prisma.scoreSnapshot.findMany({
-      where: { seasonSlug, teamCardId: { in: cardIds } },
+      where: { seasonSlug, teamCardId: { in: cardIds }, ...REGULAR_SEASON_SNAPSHOTS },
       orderBy: { capturedAt: "desc" },
       select: { teamCardId: true, weeklyScore: true, seasonScore: true },
     });

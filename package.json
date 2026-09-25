@@ -17,6 +17,7 @@
     "sync:scores": "tsx scripts/sync-scores.ts",
     "sync:all": "npm run sync:leaderboard && npm run sync:standings && npm run sync:collection && npm run sync:sales && npm run sync:sbs-trades && npm run sync:scores",
     "import:season": "tsx scripts/import-season.ts",
+    "import:bbb3-history": "tsx scripts/import-bbb3-history.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

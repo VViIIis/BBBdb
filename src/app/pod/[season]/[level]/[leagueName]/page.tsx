@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { REGULAR_SEASON_SNAPSHOTS } from "@/lib/advancement";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,8 @@ export default async function PodPage({
     where: { seasonSlug: params.season, level, leagueName },
     include: {
       owner: true,
-      scores: { orderBy: { capturedAt: "desc" }, take: 1 },
+      // Rank the pod on weeks 1-14 only; see REGULAR_SEASON_SNAPSHOTS.
+      scores: { where: REGULAR_SEASON_SNAPSHOTS, orderBy: { capturedAt: "desc" }, take: 1 },
     },
   });
 

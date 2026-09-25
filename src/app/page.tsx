@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OwnerAvatar from "@/components/OwnerAvatar";
 import { prisma } from "@/lib/db";
 import LevelTabs from "@/components/LevelTabs";
 import SeasonTabs from "@/components/SeasonTabs";
@@ -10,6 +11,13 @@ export const dynamic = "force-dynamic"; // always read latest synced data, never
 
 function shortWallet(wallet: string) {
   return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+}
+
+// "2026REG-03" -> 3. Anything else (e.g. an imported "bbb3-final"
+// snapshot, see schema.prisma) has no week number -> null.
+function weekNumberOf(gameweek: string): number | null {
+  const m = gameweek.match(/^\d{4}REG-(\d+)$/);
+  return m ? Number(m[1]) : null;
 }
 
 // Sortable columns. `rank` defaults ascending (1 = best), Weekly/Season
@@ -47,7 +55,7 @@ const WEEKLY_PRIZE_BADGE_CLASS = [
 export default async function LeaderboardPage({
   searchParams,
 }: {
-  searchParams: { level?: string; season?: string; sort?: string; dir?: string };
+  searchParams: { level?: string; season?: string; sort?: string; dir?: string; week?: string };
 }) {
   const [season, seasons] = await Promise.all([
     resolveSeason(searchParams.season),
@@ -75,6 +83,7 @@ export default async function LeaderboardPage({
     const params = new URLSearchParams();
     if (level !== "all") params.set("level", level);
     if (searchParams.season) params.set("season", searchParams.season);
+    if (searchParams.week) params.set("week", searchParams.week);
     params.set("sort", column);
     params.set("dir", column === sortKey && dir === SORT_COLUMNS[column].defaultDir
       ? (dir === "asc" ? "desc" : "asc")
@@ -95,7 +104,7 @@ export default async function LeaderboardPage({
   // frequent, top-500-only; sbs-standings-full: heavy, less frequent, every
   // team — see syncStandings.ts) — whichever ran most recently is what's
   // actually reflected in the DB, so take the max of the two.
-  const [latest, lastSync] = await Promise.all([
+  const [latest, lastSync, gameweekGroups] = await Promise.all([
     prisma.scoreSnapshot.findFirst({
       where: { seasonSlug: season.slug },
       orderBy: { capturedAt: "desc" },
@@ -106,31 +115,67 @@ export default async function LeaderboardPage({
       orderBy: { finishedAt: "desc" },
       select: { finishedAt: true },
     }),
+    // Every week this season has scores for, for the week picker. groupBy
+    // (a SQL GROUP BY) rather than findMany({ distinct }), which Prisma
+    // resolves by pulling every matching row into memory — ~200k rows for
+    // a full season.
+    prisma.scoreSnapshot.groupBy({ by: ["gameweek"], where: { seasonSlug: season.slug } }),
   ]);
   const lastSyncedAt = lastSync?.finishedAt ?? latest?.capturedAt ?? null;
 
+  // Week picker options: only real weeks ("2026REG-03"), in order. An
+  // imported "bbb3-final"-style snapshot has no week number and is skipped.
+  const weekOptions = gameweekGroups
+    .map((g) => ({ gameweek: g.gameweek, week: weekNumberOf(g.gameweek) }))
+    .filter((w): w is { gameweek: string; week: number } => w.week != null)
+    .sort((a, b) => a.week - b.week);
+
+  // Finals = the teams SBS put in its week 17 finals league (Team.status
+  // "finals", set by scripts/import-bbb3-history.ts for BBB III), ranked by
+  // their week 17 score. That's exactly SBS's own finals leaderboard.
+  const finalWeek = weekOptions.find((w) => w.week === 17) ?? null;
+  const hasFinals =
+    finalWeek != null && (await prisma.team.count({ where: { seasonSlug: season.slug, status: "finals" } })) > 0;
+
+  const requestedWeek = weekOptions.find((w) => w.gameweek === searchParams.week) ?? null;
+  // A finished season opens on its Finals (the result that matters); a live
+  // season opens on the latest week, as before.
+  const showFinals = hasFinals && (searchParams.week === "finals" || (!requestedWeek && !season.isActive));
+  const gameweek = showFinals ? finalWeek!.gameweek : (requestedWeek?.gameweek ?? latest?.gameweek ?? null);
+  const weekNum = gameweek ? weekNumberOf(gameweek) : null;
+
+  // Weekly cash prizes are BBB IV's payout table, weeks 1-14 only — so only
+  // on the live season, and never on the finals view.
+  const weeklyPrizesActive =
+    season.isActive && !showFinals && weekNum != null && weekNum >= 1 && weekNum <= 14;
+
   // The TRUE global weekly top-5 — unfiltered by level, independent of
   // whatever sort/level filter the page is currently showing — because this
-  // is what real money now rides on (see WEEKLY_PRIZES above), so it has to
+  // is what real money rides on (see WEEKLY_PRIZES above), so it has to
   // reflect the actual full field, not just whichever subset of rows
   // happens to be on screen right now.
-  const weeklyTop5 = latest
-    ? await prisma.scoreSnapshot.findMany({
-        where: { seasonSlug: season.slug, gameweek: latest.gameweek },
-        orderBy: { weeklyScore: "desc" },
-        take: 5,
-        select: { teamCardId: true },
-      })
-    : [];
+  const weeklyTop5 =
+    weeklyPrizesActive && gameweek
+      ? await prisma.scoreSnapshot.findMany({
+          where: { seasonSlug: season.slug, gameweek },
+          orderBy: { weeklyScore: "desc" },
+          take: 5,
+          select: { teamCardId: true },
+        })
+      : [];
   const weeklyPrizeRank = new Map(weeklyTop5.map((r, i) => [r.teamCardId, i + 1]));
 
-  // gameweek is a string like "2026REG-03" for a live week, or e.g.
-  // "bbb3-final" for an imported historical snapshot (see schema.prisma) —
-  // only the live-week format has a week number to check against SBS's
-  // "weeks 1-14 only" rule, and an imported final snapshot never qualifies.
-  const weekNumMatch = latest?.gameweek.match(/^\d{4}REG-(\d+)$/);
-  const weekNum = weekNumMatch ? Number(weekNumMatch[1]) : null;
-  const weeklyPrizesActive = weekNum != null && weekNum >= 1 && weekNum <= 14;
+  // Links for the week picker keep the level/sort the viewer already chose.
+  function weekHref(week: string | null) {
+    const params = new URLSearchParams();
+    if (level !== "all") params.set("level", level);
+    if (searchParams.season) params.set("season", searchParams.season);
+    if (week) params.set("week", week);
+    if (searchParams.sort) params.set("sort", searchParams.sort);
+    if (searchParams.dir) params.set("dir", searchParams.dir);
+    const qs = params.toString();
+    return qs ? `/?${qs}` : "/";
+  }
 
   const orderBy =
     sortKey === "rank"
@@ -139,12 +184,16 @@ export default async function LeaderboardPage({
         ? { weeklyScore: dir }
         : { seasonScore: dir };
 
-  const rows = latest
+  const teamFilter = {
+    ...(level === "all" ? {} : { level }),
+    ...(showFinals ? { status: "finals" } : {}),
+  };
+  const rows = gameweek
     ? await prisma.scoreSnapshot.findMany({
         where: {
           seasonSlug: season.slug,
-          gameweek: latest.gameweek,
-          team: level === "all" ? undefined : { level },
+          gameweek,
+          team: Object.keys(teamFilter).length > 0 ? teamFilter : undefined,
         },
         include: { team: { include: { owner: true } } },
         orderBy,
@@ -173,8 +222,12 @@ export default async function LeaderboardPage({
           <h1 className="mb-1 text-2xl font-bold">Leaderboard</h1>
           <p className="text-sm text-zinc-400">
             {season.name}
-            {latest
-              ? ` · gameweek ${latest.gameweek} · last synced ${lastSyncedAt ? lastSyncedAt.toLocaleString() : "unknown"}`
+            {gameweek
+              ? `${showFinals ? " · Week 17 Finals" : ` · gameweek ${gameweek}`}${
+                  season.isActive
+                    ? ` · last synced ${lastSyncedAt ? lastSyncedAt.toLocaleString() : "unknown"}`
+                    : ""
+                }`
               : season.isActive
                 ? " · no data yet — run `npm run sync:leaderboard` to pull the first snapshot."
                 : " · this season isn't live-scored — see the team pages for final results."}
@@ -206,7 +259,37 @@ export default async function LeaderboardPage({
         <SeasonTabs seasons={seasons} current={season.slug} basePath="/" />
       </div>
 
-      <LevelTabs current={level} />
+      <LevelTabs current={level} extraParams={{ season: searchParams.season, week: searchParams.week }} />
+
+      {weekOptions.length > 1 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs uppercase tracking-wide text-zinc-500">Week</span>
+          {weekOptions.map((w) => {
+            const active = !showFinals && w.gameweek === gameweek;
+            return (
+              <Link
+                key={w.gameweek}
+                href={weekHref(w.gameweek)}
+                className={`rounded-full px-3 py-1 font-mono text-sm ${
+                  active ? "bg-banana-400 font-semibold text-ink-900" : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
+                }`}
+              >
+                {String(w.week).padStart(2, "0")}
+              </Link>
+            );
+          })}
+          {hasFinals && (
+            <Link
+              href={weekHref("finals")}
+              className={`rounded-full px-3 py-1 text-sm ${
+                showFinals ? "bg-banana-400 font-semibold text-ink-900" : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
+              }`}
+            >
+              🏆 Finals
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-ink-600">
         <table className="w-full min-w-[560px] text-left text-sm">
@@ -251,35 +334,19 @@ export default async function LeaderboardPage({
                       duplicate-free and matches what "Rank" means in a
                       leaderboard: where this row sits in the list you're
                       looking at right now. */}
-                  <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
+                  <td className="px-3 py-2 text-zinc-400">
+                    {showFinals && level === "all" && sortKey === "weekly" && dir === "desc" && i === 0 ? (
+                      <span title="Champion">🏆 1</span>
+                    ) : (
+                      i + 1
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <Link
                       href={`/owner/${r.team.ownerWallet}`}
                       className="flex items-center gap-2 hover:text-banana-400"
                     >
-                      {/* Owner.imageUrl is the owner's SBS profile picture,
-                          already synced from SBS's own profile API by
-                          syncStandings/syncLeaderboard. Owners who never set
-                          one get a banana, which is SBS's own default too.
-                          Plain <img> rather than next/image, same as the
-                          owner page: these are tiny, and it avoids having to
-                          allowlist every host SBS might serve them from. */}
-                      {r.team.owner.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={r.team.owner.imageUrl}
-                          alt=""
-                          loading="lazy"
-                          className="h-7 w-7 shrink-0 rounded-full border border-ink-600 object-cover"
-                        />
-                      ) : (
-                        <span
-                          aria-hidden
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-ink-600 bg-ink-800 text-sm"
-                        >
-                          🍌
-                        </span>
-                      )}
+                      <OwnerAvatar imageUrl={r.team.owner.imageUrl} />
                       <span>{r.team.owner.displayName ?? shortWallet(r.team.ownerWallet)}</span>
                     </Link>
                   </td>
