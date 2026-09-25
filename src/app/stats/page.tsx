@@ -116,29 +116,29 @@ export default async function StatsPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink-600 bg-ink-800 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Team</th>
-                <th className="cursor-pointer px-3 py-2 hover:text-banana-400">
+                <th className="px-2 py-2 sm:px-3">#</th>
+                <th className="px-2 py-2 sm:px-3">Team</th>
+                <th className="cursor-pointer px-2 py-2 sm:px-3 hover:text-banana-400">
                   <Link href={sortHref("total")}>Total pts{sortArrow("total")}</Link>
                 </th>
-                <th className="cursor-pointer px-3 py-2 hover:text-banana-400">
+                <th className="cursor-pointer px-2 py-2 sm:px-3 hover:text-banana-400">
                   <Link href={sortHref("avg")}>Avg/gm{sortArrow("avg")}</Link>
                 </th>
-                <th className="cursor-pointer px-3 py-2 hover:text-banana-400">
+                <th className="cursor-pointer px-2 py-2 sm:px-3 hover:text-banana-400">
                   <Link href={sortHref("games")}>Games{sortArrow("games")}</Link>
                 </th>
-                <th className="px-3 py-2">Best game</th>
+                <th className="hidden sm:table-cell px-2 py-2 sm:px-3">Best game</th>
               </tr>
             </thead>
             <tbody>
               {leaders.map((row, i) => (
                 <tr key={row.team} className="border-b border-ink-700 last:border-0 hover:bg-ink-800">
-                  <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
-                  <td className="px-3 py-2 font-semibold text-zinc-100">{row.team}</td>
-                  <td className="px-3 py-2 font-bold tabular-nums text-banana-400">{row.totalPoints.toFixed(2)}</td>
-                  <td className="px-3 py-2 tabular-nums text-zinc-300">{row.avgPoints.toFixed(2)}</td>
-                  <td className="px-3 py-2 tabular-nums text-zinc-300">{row.games}</td>
-                  <td className="px-3 py-2 text-zinc-400">
+                  <td className="px-2 py-2 sm:px-3 text-zinc-500">{i + 1}</td>
+                  <td className="px-2 py-2 sm:px-3 font-semibold text-zinc-100">{row.team}</td>
+                  <td className="px-2 py-2 sm:px-3 font-bold tabular-nums text-banana-400">{row.totalPoints.toFixed(2)}</td>
+                  <td className="px-2 py-2 sm:px-3 tabular-nums text-zinc-300">{row.avgPoints.toFixed(2)}</td>
+                  <td className="px-2 py-2 sm:px-3 tabular-nums text-zinc-300">{row.games}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-zinc-400">
                     {row.bestGame ? (
                       <Link
                         href={`/scores?season=${season}&week=${row.bestGame.week}`}

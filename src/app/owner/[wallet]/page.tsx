@@ -107,7 +107,7 @@ export default async function OwnerPage({
         )}
         <div>
           <h1 className="text-2xl font-bold">{owner.displayName ?? shortWallet(owner.wallet)}</h1>
-          <p className="font-mono text-xs text-zinc-500">{owner.wallet}</p>
+          <p className="break-all font-mono text-xs text-zinc-500">{owner.wallet}</p>
           <Link
             href={`/exposure?q=${owner.wallet}`}
             className="mt-1 inline-block text-xs text-zinc-500 hover:text-banana-400"
@@ -201,22 +201,22 @@ export default async function OwnerPage({
       )}
 
       <div className="overflow-x-auto rounded-lg border border-ink-600">
-        <table className="w-full min-w-[560px] text-left text-sm">
+        <table className="w-full sm:min-w-[560px] text-left text-sm">
           <thead className="bg-ink-800 text-zinc-400">
             <tr>
-              {viewAll && <th className="px-3 py-2">Season</th>}
-              <th className="px-3 py-2">Team</th>
-              <th className="px-3 py-2">Level</th>
-              {!viewAll && <th className="px-3 py-2">Pod</th>}
-              <th className="px-3 py-2 text-right">Weekly</th>
-              <th className="px-3 py-2 text-right">Season</th>
+              {viewAll && <th className="px-2 py-2 sm:px-3">Season</th>}
+              <th className="px-2 py-2 sm:px-3">Team</th>
+              <th className="hidden sm:table-cell px-2 py-2 sm:px-3">Level</th>
+              {!viewAll && <th className="px-2 py-2 sm:px-3">Pod</th>}
+              <th className="px-2 py-2 sm:px-3 text-right">Weekly</th>
+              <th className="px-2 py-2 sm:px-3 text-right">Season</th>
             </tr>
           </thead>
           <tbody>
             {teams.map((t) => (
               <tr key={`${t.seasonSlug}-${t.cardId}`} className="border-t border-ink-600">
-                {viewAll && <td className="px-3 py-2 text-zinc-400">{t.season.name}</td>}
-                <td className="px-3 py-2">
+                {viewAll && <td className="px-2 py-2 sm:px-3 text-zinc-400">{t.season.name}</td>}
+                <td className="px-2 py-2 sm:px-3">
                   <Link href={`/team/${t.seasonSlug}/${t.cardId}`} className="hover:text-banana-400">
                     {t.leagueName} · #{t.cardId}
                   </Link>
@@ -232,9 +232,9 @@ export default async function OwnerPage({
                     </>
                   )}
                 </td>
-                <td className="px-3 py-2 text-zinc-400">{t.level}</td>
+                <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-zinc-400">{t.level}</td>
                 {!viewAll && (
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     {(() => {
                       const pr = podRankByCard.get(t.cardId);
                       if (!pr || pr.podRank == null) return <span className="text-zinc-500">—</span>;
@@ -247,10 +247,10 @@ export default async function OwnerPage({
                     })()}
                   </td>
                 )}
-                <td className="px-3 py-2 text-right font-mono">
+                <td className="px-2 py-2 sm:px-3 text-right font-mono">
                   {t.latest ? t.latest.weeklyScore.toFixed(2) : "—"}
                 </td>
-                <td className="px-3 py-2 text-right font-mono font-semibold">
+                <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">
                   {t.latest ? t.latest.seasonScore.toFixed(2) : "—"}
                 </td>
               </tr>

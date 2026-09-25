@@ -92,17 +92,17 @@ export default async function OwnersLeaderboardPage({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-ink-600">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full sm:min-w-[720px] text-left text-sm">
           <thead className="bg-ink-800 text-zinc-400">
             <tr>
-              <th className="px-3 py-2">#</th>
-              <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2 text-right">Pro</th>
-              <th className="px-3 py-2 text-right">Jackpot</th>
-              <th className="px-3 py-2 text-right">HOF</th>
-              <th className="px-3 py-2 text-right">JackHOF</th>
-              <th className="px-3 py-2 text-right">Draft passes held</th>
-              <th className="px-3 py-2 text-right">Total</th>
+              <th className="px-2 py-2 sm:px-3">#</th>
+              <th className="px-2 py-2 sm:px-3">Owner</th>
+              <th className="px-2 py-2 sm:px-3 text-right">Pro</th>
+              <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right">Jackpot</th>
+              <th className="px-2 py-2 sm:px-3 text-right">HOF</th>
+              <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right">JackHOF</th>
+              <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right">Draft passes held</th>
+              <th className="px-2 py-2 sm:px-3 text-right">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -110,19 +110,19 @@ export default async function OwnersLeaderboardPage({
               const owner = ownerByWallet.get(r.wallet);
               return (
                 <tr key={r.wallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3 text-zinc-400">{i + 1}</td>
+                  <td className="px-2 py-2 sm:px-3">
                     <Link href={`/owner/${r.wallet}`} className="flex items-center gap-2 hover:text-banana-400">
                       <OwnerAvatar imageUrl={owner?.imageUrl} />
                       <span>{owner?.displayName ?? shortWallet(r.wallet)}</span>
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono font-semibold">{r.pro || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-zinc-400">{r.jackpot || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-zinc-400">{r.hof || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-zinc-400">{r.jackHof || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-zinc-400">{r.draftPasses}</td>
-                  <td className="px-3 py-2 text-right font-mono text-zinc-400">
+                  <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">{r.pro || "—"}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">{r.jackpot || "—"}</td>
+                  <td className="px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">{r.hof || "—"}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">{r.jackHof || "—"}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">{r.draftPasses}</td>
+                  <td className="px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">
                     {r.pro + r.jackpot + r.hof + r.jackHof + r.draftPasses}
                   </td>
                 </tr>

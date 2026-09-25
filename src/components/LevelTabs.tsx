@@ -12,7 +12,7 @@ export default function LevelTabs({
 }) {
   const tabs = ["all", ...KNOWN_LEVELS];
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
       {tabs.map((tab) => {
         const active = tab === current;
         const params = new URLSearchParams();
@@ -24,7 +24,7 @@ export default function LevelTabs({
           <Link
             key={tab}
             href={href}
-            className={`rounded-full px-3 py-1 text-sm ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm ${
               active ? "bg-banana-400 font-semibold text-ink-900" : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
             }`}
           >

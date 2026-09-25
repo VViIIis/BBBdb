@@ -433,11 +433,11 @@ export default async function ExposurePage({
           <p className="border-b border-ink-600 bg-ink-800 px-3 py-2 text-xs text-zinc-400">
             Multiple Team Positions match &ldquo;{stackAQuery}&rdquo; for the first slot — pick one:
           </p>
-          <table className="w-full min-w-[420px] text-left text-sm">
+          <table className="w-full sm:min-w-[420px] text-left text-sm">
             <tbody>
               {matchingA.map((m) => (
                 <tr key={m.value} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     <Link
                       href={`/exposure?stackA=${encodeURIComponent(m.value)}&stackB=${encodeURIComponent(stackBQuery)}&season=${season.slug}`}
                       className="hover:text-banana-400"
@@ -458,11 +458,11 @@ export default async function ExposurePage({
           <p className="border-b border-ink-600 bg-ink-800 px-3 py-2 text-xs text-zinc-400">
             Multiple Team Positions match &ldquo;{stackBQuery}&rdquo; for the second slot — pick one:
           </p>
-          <table className="w-full min-w-[420px] text-left text-sm">
+          <table className="w-full sm:min-w-[420px] text-left text-sm">
             <tbody>
               {matchingB.map((m) => (
                 <tr key={m.value} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     <Link
                       href={`/exposure?stackA=${encodeURIComponent(resolvedA!)}&stackB=${encodeURIComponent(m.value)}&season=${season.slug}`}
                       className="hover:text-banana-400"
@@ -502,21 +502,21 @@ export default async function ExposurePage({
 
           {stackTotalTeams > 0 && (
             <div className="overflow-x-auto rounded-lg border border-ink-600">
-              <table className="w-full min-w-[420px] text-left text-sm">
+              <table className="w-full sm:min-w-[420px] text-left text-sm">
                 <thead className="bg-ink-800 text-zinc-400">
                   <tr>
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">
+                    <th className="px-2 py-2 sm:px-3">#</th>
+                    <th className="px-2 py-2 sm:px-3">
                       <Link href={sortHref("value")} className="hover:text-banana-400">
                         Owner{sortIndicator("value")}
                       </Link>
                     </th>
-                    <th className="px-3 py-2 text-right">
+                    <th className="px-2 py-2 sm:px-3 text-right">
                       <Link href={sortHref("teams")} className="hover:text-banana-400">
                         Teams{sortIndicator("teams")}
                       </Link>
                     </th>
-                    <th className="px-3 py-2 text-right">
+                    <th className="px-2 py-2 sm:px-3 text-right">
                       <Link href={sortHref("pct")} className="hover:text-banana-400">
                         Exposure{sortIndicator("pct")}
                       </Link>
@@ -526,14 +526,14 @@ export default async function ExposurePage({
                 <tbody>
                   {stackRows.map((r, i) => (
                     <tr key={r.wallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                      <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2 sm:px-3 text-zinc-400">{i + 1}</td>
+                      <td className="px-2 py-2 sm:px-3">
                         <Link href={`/owner/${r.wallet}`} className="hover:text-banana-400">
                           {r.displayName ?? shortWallet(r.wallet)}
                         </Link>
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">{r.teams}</td>
-                      <td className="px-3 py-2 text-right font-mono text-zinc-400">{r.pct.toFixed(1)}%</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">{r.teams}</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">{r.pct.toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -553,11 +553,11 @@ export default async function ExposurePage({
           <p className="border-b border-ink-600 bg-ink-800 px-3 py-2 text-xs text-zinc-400">
             Multiple Team Positions match &ldquo;{posQuery}&rdquo; — pick one:
           </p>
-          <table className="w-full min-w-[420px] text-left text-sm">
+          <table className="w-full sm:min-w-[420px] text-left text-sm">
             <tbody>
               {matchingValues.map((m) => (
                 <tr key={m.value} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     <Link
                       href={`/exposure?pos=${encodeURIComponent(m.value)}&season=${season.slug}`}
                       className="hover:text-banana-400"
@@ -591,21 +591,21 @@ export default async function ExposurePage({
 
           {posTotalTeams > 0 && (
             <div className="overflow-x-auto rounded-lg border border-ink-600">
-              <table className="w-full min-w-[420px] text-left text-sm">
+              <table className="w-full sm:min-w-[420px] text-left text-sm">
                 <thead className="bg-ink-800 text-zinc-400">
                   <tr>
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">
+                    <th className="px-2 py-2 sm:px-3">#</th>
+                    <th className="px-2 py-2 sm:px-3">
                       <Link href={sortHref("value")} className="hover:text-banana-400">
                         Owner{sortIndicator("value")}
                       </Link>
                     </th>
-                    <th className="px-3 py-2 text-right">
+                    <th className="px-2 py-2 sm:px-3 text-right">
                       <Link href={sortHref("teams")} className="hover:text-banana-400">
                         Teams{sortIndicator("teams")}
                       </Link>
                     </th>
-                    <th className="px-3 py-2 text-right">
+                    <th className="px-2 py-2 sm:px-3 text-right">
                       <Link href={sortHref("pct")} className="hover:text-banana-400">
                         Exposure{sortIndicator("pct")}
                       </Link>
@@ -615,14 +615,14 @@ export default async function ExposurePage({
                 <tbody>
                   {posRows.map((r, i) => (
                     <tr key={r.wallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                      <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2 sm:px-3 text-zinc-400">{i + 1}</td>
+                      <td className="px-2 py-2 sm:px-3">
                         <Link href={`/owner/${r.wallet}`} className="hover:text-banana-400">
                           {r.displayName ?? shortWallet(r.wallet)}
                         </Link>
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">{r.teams}</td>
-                      <td className="px-3 py-2 text-right font-mono text-zinc-400">{r.pct.toFixed(1)}%</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">{r.teams}</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">{r.pct.toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -642,11 +642,11 @@ export default async function ExposurePage({
           <p className="border-b border-ink-600 bg-ink-800 px-3 py-2 text-xs text-zinc-400">
             Multiple owners match &ldquo;{q}&rdquo; — pick one:
           </p>
-          <table className="w-full min-w-[420px] text-left text-sm">
+          <table className="w-full sm:min-w-[420px] text-left text-sm">
             <tbody>
               {owners.map((o) => (
                 <tr key={o.wallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     <Link href={`/exposure?q=${o.wallet}&season=${season.slug}`} className="hover:text-banana-400">
                       {o.displayName ?? shortWallet(o.wallet)}
                     </Link>
@@ -709,21 +709,21 @@ export default async function ExposurePage({
 
           {totalDrafted > 0 && !rosterDataMissing && (
             <div className="overflow-x-auto rounded-lg border border-ink-600">
-              <table className="w-full min-w-[420px] text-left text-sm">
+              <table className="w-full sm:min-w-[420px] text-left text-sm">
                 <thead className="bg-ink-800 text-zinc-400">
                   <tr>
-                    <th className="px-3 py-2">
+                    <th className="px-2 py-2 sm:px-3">
                       <Link href={sortHref("value")} className="hover:text-banana-400">
                         Team Position{sortIndicator("value")}
                       </Link>
                     </th>
-                    <th className="px-3 py-2">Pos</th>
-                    <th className="px-3 py-2 text-right">
+                    <th className="px-2 py-2 sm:px-3">Pos</th>
+                    <th className="px-2 py-2 sm:px-3 text-right">
                       <Link href={sortHref("teams")} className="hover:text-banana-400">
                         Teams{sortIndicator("teams")}
                       </Link>
                     </th>
-                    <th className="px-3 py-2 text-right">
+                    <th className="px-2 py-2 sm:px-3 text-right">
                       <Link href={sortHref("pct")} className="hover:text-banana-400">
                         Exposure{sortIndicator("pct")}
                       </Link>
@@ -733,10 +733,10 @@ export default async function ExposurePage({
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.value} className="border-t border-ink-600">
-                      <td className="px-3 py-2 font-medium">{r.value}</td>
-                      <td className="px-3 py-2 text-zinc-400">{r.position}</td>
-                      <td className="px-3 py-2 text-right font-mono">{r.count}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">{r.pct.toFixed(1)}%</td>
+                      <td className="px-2 py-2 sm:px-3 font-medium">{r.value}</td>
+                      <td className="px-2 py-2 sm:px-3 text-zinc-400">{r.position}</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.count}</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">{r.pct.toFixed(1)}%</td>
                     </tr>
                   ))}
                   {rows.length === 0 && (

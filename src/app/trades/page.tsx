@@ -307,21 +307,21 @@ export default async function TradesPage({
             , measured by trade activity instead of holdings.
           </p>
           <div className="mb-8 overflow-x-auto rounded-lg border border-ink-600">
-            <table className="w-full min-w-[420px] text-left text-sm">
+            <table className="w-full sm:min-w-[420px] text-left text-sm">
               <thead className="bg-ink-800 text-zinc-400">
                 <tr>
-                  <th className="px-3 py-2">
+                  <th className="px-2 py-2 sm:px-3">
                     <Link href={posSortHref("value")} className="hover:text-banana-400">
                       Team Position{posSortIndicator("value")}
                     </Link>
                   </th>
-                  <th className="px-3 py-2">Pos</th>
-                  <th className="px-3 py-2 text-right">
+                  <th className="px-2 py-2 sm:px-3">Pos</th>
+                  <th className="px-2 py-2 sm:px-3 text-right">
                     <Link href={posSortHref("count")} className="hover:text-banana-400">
                       Sales{posSortIndicator("count")}
                     </Link>
                   </th>
-                  <th className="px-3 py-2 text-right">
+                  <th className="px-2 py-2 sm:px-3 text-right">
                     <Link href={posSortHref("avgPrice")} className="hover:text-banana-400">
                       Avg price{dominantSymbol ? ` (${dominantSymbol})` : ""}{posSortIndicator("avgPrice")}
                     </Link>
@@ -331,10 +331,10 @@ export default async function TradesPage({
               <tbody>
                 {posRows.map((r) => (
                   <tr key={r.value} className="border-t border-ink-600">
-                    <td className="px-3 py-2 font-medium">{r.value}</td>
-                    <td className="px-3 py-2 text-zinc-400">{r.position}</td>
-                    <td className="px-3 py-2 text-right font-mono">{r.count}</td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold">
+                    <td className="px-2 py-2 sm:px-3 font-medium">{r.value}</td>
+                    <td className="px-2 py-2 sm:px-3 text-zinc-400">{r.position}</td>
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.count}</td>
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">
                       {formatPrice(r.avgPrice)}
                     </td>
                   </tr>
@@ -346,26 +346,26 @@ export default async function TradesPage({
           <h2 className="mb-2 text-lg font-semibold">Top traders</h2>
           <p className="mb-3 text-sm text-zinc-400">Every wallet ranked by total buys + sells.</p>
           <div className="mb-8 overflow-x-auto rounded-lg border border-ink-600">
-            <table className="w-full min-w-[480px] text-left text-sm">
+            <table className="w-full sm:min-w-[480px] text-left text-sm">
               <thead className="bg-ink-800 text-zinc-400">
                 <tr>
-                  <th className="px-3 py-2">Owner</th>
-                  <th className="px-3 py-2 text-right">
+                  <th className="px-2 py-2 sm:px-3">Owner</th>
+                  <th className="px-2 py-2 sm:px-3 text-right">
                     <Link href={traderSortHref("bought")} className="hover:text-banana-400">
                       Bought{traderSortIndicator("bought")}
                     </Link>
                   </th>
-                  <th className="px-3 py-2 text-right">
+                  <th className="px-2 py-2 sm:px-3 text-right">
                     <Link href={traderSortHref("sold")} className="hover:text-banana-400">
                       Sold{traderSortIndicator("sold")}
                     </Link>
                   </th>
-                  <th className="px-3 py-2 text-right">
+                  <th className="px-2 py-2 sm:px-3 text-right">
                     <Link href={traderSortHref("total")} className="hover:text-banana-400">
                       Total{traderSortIndicator("total")}
                     </Link>
                   </th>
-                  <th className="px-3 py-2 text-right">
+                  <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right">
                     <Link href={traderSortHref("ethTotal")} className="hover:text-banana-400">
                       Volume{dominantSymbol ? ` (${dominantSymbol})` : ""}{traderSortIndicator("ethTotal")}
                     </Link>
@@ -375,15 +375,15 @@ export default async function TradesPage({
               <tbody>
                 {traderRows.map((r) => (
                   <tr key={r.wallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-2 sm:px-3">
                       <Link href={`/owner/${r.wallet}`} className="hover:text-banana-400">
                         {ownerLabel(r.wallet)}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-right font-mono">{r.bought}</td>
-                    <td className="px-3 py-2 text-right font-mono">{r.sold}</td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold">{r.total}</td>
-                    <td className="px-3 py-2 text-right font-mono text-zinc-400">
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.bought}</td>
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.sold}</td>
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">{r.total}</td>
+                    <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">
                       {formatPrice(r.ethTotal)}
                     </td>
                   </tr>
@@ -394,21 +394,21 @@ export default async function TradesPage({
 
           <h2 className="mb-2 text-lg font-semibold">Recent sales</h2>
           <div className="overflow-x-auto rounded-lg border border-ink-600">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full sm:min-w-[560px] text-left text-sm">
               <thead className="bg-ink-800 text-zinc-400">
                 <tr>
-                  <th className="px-3 py-2">Team</th>
-                  <th className="px-3 py-2">Pod</th>
-                  <th className="px-3 py-2">From</th>
-                  <th className="px-3 py-2">To</th>
-                  <th className="px-3 py-2 text-right">Price</th>
-                  <th className="px-3 py-2 text-right">When</th>
+                  <th className="px-2 py-2 sm:px-3">Team</th>
+                  <th className="hidden sm:table-cell px-2 py-2 sm:px-3">Pod</th>
+                  <th className="px-2 py-2 sm:px-3">From</th>
+                  <th className="px-2 py-2 sm:px-3">To</th>
+                  <th className="px-2 py-2 sm:px-3 text-right">Price</th>
+                  <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right">When</th>
                 </tr>
               </thead>
               <tbody>
                 {recentSales.map((s) => (
                   <tr key={s.id} className="border-t border-ink-600 hover:bg-ink-800/60">
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-2 sm:px-3">
                       <Link
                         href={`/team/${season.slug}/${s.teamCardId}`}
                         className="hover:text-banana-400"
@@ -416,7 +416,7 @@ export default async function TradesPage({
                         {s.team.leagueName} · #{s.teamCardId}
                       </Link>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="hidden sm:table-cell px-2 py-2 sm:px-3">
                       {(() => {
                         const pr = podRankByCard.get(s.teamCardId);
                         if (!pr || pr.podRank == null) return <span className="text-zinc-500">—</span>;
@@ -428,20 +428,20 @@ export default async function TradesPage({
                         );
                       })()}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-2 sm:px-3">
                       <Link href={`/owner/${s.fromWallet}`} className="text-zinc-400 hover:text-banana-400">
                         {ownerLabel(s.fromWallet)}
                       </Link>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-2 sm:px-3">
                       <Link href={`/owner/${s.toWallet}`} className="hover:text-banana-400">
                         {ownerLabel(s.toWallet)}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold">
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">
                       {formatPrice(s.priceEth, s.paymentSymbol)}
                     </td>
-                    <td className="px-3 py-2 text-right text-xs text-zinc-500">
+                    <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right text-xs text-zinc-500">
                       {s.occurredAt.toLocaleString()}
                     </td>
                   </tr>

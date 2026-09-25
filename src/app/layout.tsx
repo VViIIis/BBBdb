@@ -25,12 +25,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 BBB<span className="text-banana-400">db</span>
               </span>
             </a>
+            {/* Ordered by real usage (Vercel Analytics, Sep 2026): Leaderboard, then
+                Search (2nd most-visited, but its box only lives on the leaderboard),
+                Advancement, Exposure, Most Teams, Stats, Scores, Trades. */}
             <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-zinc-400">
               <a href="/" className="hover:text-banana-400">
                 Leaderboard
               </a>
-              <a href="/owners" className="hover:text-banana-400">
-                Most Teams
+              <a href="/search" className="hover:text-banana-400">
+                Search
               </a>
               <a href="/advancement" className="hover:text-banana-400">
                 Advancement
@@ -38,14 +41,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/exposure" className="hover:text-banana-400">
                 Exposure
               </a>
-              <a href="/trades" className="hover:text-banana-400">
-                Trades
+              <a href="/owners" className="hover:text-banana-400">
+                Most Teams
+              </a>
+              <a href="/stats" className="hover:text-banana-400">
+                Stats
               </a>
               <a href="/scores" className="hover:text-banana-400">
                 Scores
               </a>
-              <a href="/stats" className="hover:text-banana-400">
-                Stats
+              <a href="/trades" className="hover:text-banana-400">
+                Trades
               </a>
             </nav>
           </header>

@@ -262,15 +262,15 @@ export default async function LeaderboardPage({
       <LevelTabs current={level} extraParams={{ season: searchParams.season, week: searchParams.week }} />
 
       {weekOptions.length > 1 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs uppercase tracking-wide text-zinc-500">Week</span>
+        <div className="-mx-4 mt-3 flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+          <span className="mr-1 shrink-0 text-xs uppercase tracking-wide text-zinc-500">Week</span>
           {weekOptions.map((w) => {
             const active = !showFinals && w.gameweek === gameweek;
             return (
               <Link
                 key={w.gameweek}
                 href={weekHref(w.gameweek)}
-                className={`rounded-full px-3 py-1 font-mono text-sm ${
+                className={`shrink-0 rounded-full px-3 py-1 font-mono text-sm ${
                   active ? "bg-banana-400 font-semibold text-ink-900" : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
                 }`}
               >
@@ -281,7 +281,7 @@ export default async function LeaderboardPage({
           {hasFinals && (
             <Link
               href={weekHref("finals")}
-              className={`rounded-full px-3 py-1 text-sm ${
+              className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm ${
                 showFinals ? "bg-banana-400 font-semibold text-ink-900" : "bg-ink-800 text-zinc-300 hover:bg-ink-700"
               }`}
             >
@@ -292,24 +292,26 @@ export default async function LeaderboardPage({
       )}
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-ink-600">
-        <table className="w-full min-w-[560px] text-left text-sm">
+        <table className="w-full text-left text-[13px] sm:min-w-[560px] sm:text-sm">
           <thead className="bg-ink-800 text-zinc-400">
             <tr>
-              <th className="px-3 py-2">
+              <th className="py-2 pl-3 pr-1 sm:px-3">
                 <Link href={sortHref("rank")} className="hover:text-banana-400">
-                  Rank{sortIndicator("rank")}
+                  <span className="sm:hidden">#</span>
+                  <span className="hidden sm:inline">Rank</span>
+                  {sortIndicator("rank")}
                 </Link>
               </th>
-              <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2">Team</th>
-              <th className="px-3 py-2">Level</th>
-              <th className="px-3 py-2">Pod</th>
-              <th className="px-3 py-2 text-right">
+              <th className="px-2 py-2 sm:px-3">Owner</th>
+              <th className="hidden px-2 py-2 sm:table-cell sm:px-3">Team</th>
+              <th className="hidden px-2 py-2 sm:table-cell sm:px-3">Level</th>
+              <th className="hidden px-2 py-2 sm:table-cell sm:px-3">Pod</th>
+              <th className="px-2 py-2 sm:px-3 text-right">
                 <Link href={sortHref("weekly")} className="hover:text-banana-400">
                   Weekly{sortIndicator("weekly")}
                 </Link>
               </th>
-              <th className="px-3 py-2 text-right">
+              <th className="px-2 py-2 sm:px-3 text-right">
                 <Link href={sortHref("season")} className="hover:text-banana-400">
                   Season{sortIndicator("season")}
                 </Link>
@@ -319,6 +321,16 @@ export default async function LeaderboardPage({
           <tbody>
             {rows.map((r, i) => {
               const prizeRank = weeklyPrizesActive ? weeklyPrizeRank.get(r.teamCardId) : undefined;
+              const pr = podRankByCard.get(r.teamCardId);
+              const podLabel =
+                !pr || pr.podRank == null ? (
+                  <span className="text-zinc-500">—</span>
+                ) : (
+                  <span className={pr.advancing ? "text-banana-400" : "text-zinc-400"}>
+                    {ordinal(pr.podRank)}/{pr.podSize}
+                    {pr.advancing && " ↑"}
+                  </span>
+                );
               return (
                 <tr key={r.teamCardId} className="border-t border-ink-600 hover:bg-ink-800/60">
                   {/* SBS's own stored `rank` field turns out to be PER-LEVEL, not
@@ -334,23 +346,36 @@ export default async function LeaderboardPage({
                       duplicate-free and matches what "Rank" means in a
                       leaderboard: where this row sits in the list you're
                       looking at right now. */}
-                  <td className="px-3 py-2 text-zinc-400">
+                  <td className="py-2 pl-3 pr-1 text-zinc-400 sm:px-3">
                     {showFinals && level === "all" && sortKey === "weekly" && dir === "desc" && i === 0 ? (
                       <span title="Champion">🏆 1</span>
                     ) : (
                       i + 1
                     )}
                   </td>
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/owner/${r.team.ownerWallet}`}
-                      className="flex items-center gap-2 hover:text-banana-400"
-                    >
+                  <td className="px-2 py-2 sm:px-3">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                       <OwnerAvatar imageUrl={r.team.owner.imageUrl} />
-                      <span>{r.team.owner.displayName ?? shortWallet(r.team.ownerWallet)}</span>
-                    </Link>
+                      <div className="min-w-0">
+                        <Link
+                          href={`/owner/${r.team.ownerWallet}`}
+                          className="block max-w-[6.5rem] truncate hover:text-banana-400 sm:max-w-none"
+                        >
+                          {r.team.owner.displayName ?? shortWallet(r.team.ownerWallet)}
+                        </Link>
+                        {/* Phone-only second line: card # and pod standing from the hidden Team / Pod columns.
+                            Level is left off to fit a 375px screen — the level tabs above cover it. */}
+                        <div className="whitespace-nowrap text-xs text-zinc-500 sm:hidden">
+                          <Link href={`/team/${season.slug}/${r.teamCardId}`} className="hover:text-banana-400">
+                            #{r.teamCardId}
+                          </Link>
+                          {" · "}
+                          {podLabel}
+                        </div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-3 py-2 text-zinc-400">
+                  <td className="hidden px-2 py-2 text-zinc-400 sm:table-cell sm:px-3">
                     <Link href={`/team/${season.slug}/${r.teamCardId}`} className="hover:text-banana-400">
                       {r.team.leagueName} · #{r.teamCardId}
                     </Link>{" "}
@@ -361,31 +386,20 @@ export default async function LeaderboardPage({
                       (pod)
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-zinc-400">{r.team.level}</td>
-                  <td className="px-3 py-2">
-                    {(() => {
-                      const pr = podRankByCard.get(r.teamCardId);
-                      if (!pr || pr.podRank == null) return <span className="text-zinc-500">—</span>;
-                      return (
-                        <span className={pr.advancing ? "text-banana-400" : "text-zinc-400"}>
-                          {ordinal(pr.podRank)}/{pr.podSize}
-                          {pr.advancing && " ↑"}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">
+                  <td className="hidden px-2 py-2 text-zinc-400 sm:table-cell sm:px-3">{r.team.level}</td>
+                  <td className="hidden px-2 py-2 sm:table-cell sm:px-3">{podLabel}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-right font-mono sm:px-3">
                     {r.weeklyScore.toFixed(2)}
                     {prizeRank != null && (
                       <span
-                        className={`ml-1.5 inline-block rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold ${WEEKLY_PRIZE_BADGE_CLASS[prizeRank - 1]}`}
+                        className={`ml-auto mt-0.5 block w-fit rounded-full px-1.5 py-0.5 text-[10px] font-semibold sm:ml-1.5 sm:mt-0 sm:inline-block sm:align-middle ${WEEKLY_PRIZE_BADGE_CLASS[prizeRank - 1]}`}
                         title={`#${prizeRank} this week — wins $${WEEKLY_PRIZES[prizeRank - 1]}`}
                       >
                         🏆 ${WEEKLY_PRIZES[prizeRank - 1]}
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono font-semibold">
+                  <td className="whitespace-nowrap py-2 pl-2 pr-3 text-right font-mono font-semibold sm:px-3">
                     {r.seasonScore.toFixed(2)}
                   </td>
                 </tr>

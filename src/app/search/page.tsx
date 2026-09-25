@@ -82,26 +82,26 @@ export default async function SearchPage({
 
       {q && teams.length > 0 && (
         <div className="mb-6 overflow-x-auto rounded-lg border border-ink-600">
-          <table className="w-full min-w-[520px] text-left text-sm">
+          <table className="w-full sm:min-w-[520px] text-left text-sm">
             <thead className="bg-ink-800 text-zinc-400">
               <tr>
-                <th className="px-3 py-2">Card</th>
-                <th className="px-3 py-2">Season</th>
-                <th className="px-3 py-2">Level</th>
-                <th className="px-3 py-2">Owner</th>
+                <th className="px-2 py-2 sm:px-3">Card</th>
+                <th className="hidden sm:table-cell px-2 py-2 sm:px-3">Season</th>
+                <th className="hidden sm:table-cell px-2 py-2 sm:px-3">Level</th>
+                <th className="px-2 py-2 sm:px-3">Owner</th>
               </tr>
             </thead>
             <tbody>
               {teams.map((t) => (
                 <tr key={`${t.seasonSlug}-${t.cardId}`} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     <Link href={`/team/${t.seasonSlug}/${t.cardId}`} className="hover:text-banana-400">
                       {t.leagueName} &middot; #{t.cardId}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-zinc-400">{t.season.name}</td>
-                  <td className="px-3 py-2 text-zinc-400">{t.level}</td>
-                  <td className="px-3 py-2">
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-zinc-400">{t.season.name}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-zinc-400">{t.level}</td>
+                  <td className="px-2 py-2 sm:px-3">
                     <Link href={`/owner/${t.ownerWallet}`} className="hover:text-banana-400">
                       {t.owner.displayName ?? shortWallet(t.ownerWallet)}
                     </Link>
@@ -115,17 +115,17 @@ export default async function SearchPage({
 
       {q && owners.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-ink-600">
-          <table className="w-full min-w-[420px] text-left text-sm">
+          <table className="w-full sm:min-w-[420px] text-left text-sm">
             <thead className="bg-ink-800 text-zinc-400">
               <tr>
-                <th className="px-3 py-2">Owner</th>
-                <th className="px-3 py-2 text-right">Teams</th>
+                <th className="px-2 py-2 sm:px-3">Owner</th>
+                <th className="px-2 py-2 sm:px-3 text-right">Teams</th>
               </tr>
             </thead>
             <tbody>
               {owners.map((o) => (
                 <tr key={o.wallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3">
                     <Link href={`/owner/${o.wallet}`} className="hover:text-banana-400">
                       {o.displayName ?? shortWallet(o.wallet)}
                     </Link>
@@ -135,7 +135,7 @@ export default async function SearchPage({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono">{o._count.teams}</td>
+                  <td className="px-2 py-2 sm:px-3 text-right font-mono">{o._count.teams}</td>
                 </tr>
               ))}
             </tbody>

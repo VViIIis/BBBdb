@@ -149,22 +149,22 @@ export default async function TeamPage({
           <section>
             <h2 className="mb-2 text-lg font-semibold">Score history</h2>
             <div className="overflow-x-auto rounded-lg border border-ink-600">
-              <table className="w-full min-w-[420px] text-left text-sm">
+              <table className="w-full sm:min-w-[420px] text-left text-sm">
                 <thead className="bg-ink-800 text-zinc-400">
                   <tr>
-                    <th className="px-3 py-2">Gameweek</th>
-                    <th className="px-3 py-2">Rank</th>
-                    <th className="px-3 py-2 text-right">Weekly</th>
-                    <th className="px-3 py-2 text-right">Season</th>
+                    <th className="px-2 py-2 sm:px-3">Gameweek</th>
+                    <th className="px-2 py-2 sm:px-3">Rank</th>
+                    <th className="px-2 py-2 sm:px-3 text-right">Weekly</th>
+                    <th className="px-2 py-2 sm:px-3 text-right">Season</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...team.scores].reverse().map((s) => (
                     <tr key={s.gameweek} className="border-t border-ink-600">
-                      <td className="px-3 py-2">{s.gameweek}</td>
-                      <td className="px-3 py-2 text-zinc-400">{s.rank ?? "—"}</td>
-                      <td className="px-3 py-2 text-right font-mono">{s.weeklyScore.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">
+                      <td className="px-2 py-2 sm:px-3">{s.gameweek}</td>
+                      <td className="px-2 py-2 sm:px-3 text-zinc-400">{s.rank ?? "—"}</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono">{s.weeklyScore.toFixed(2)}</td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">
                         {s.seasonScore.toFixed(2)}
                       </td>
                     </tr>

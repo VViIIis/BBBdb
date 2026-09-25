@@ -180,22 +180,22 @@ export default async function AdvancementPage({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-ink-600">
-        <table className="w-full min-w-[560px] text-left text-sm">
+        <table className="w-full sm:min-w-[560px] text-left text-sm">
           <thead className="bg-ink-800 text-zinc-400">
             <tr>
-              <th className="px-3 py-2">#</th>
-              <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2 text-right">
+              <th className="px-2 py-2 sm:px-3">#</th>
+              <th className="px-2 py-2 sm:px-3">Owner</th>
+              <th className="px-2 py-2 sm:px-3 text-right">
                 <Link href={sortHref("advancing")} className="hover:text-banana-400">
                   Advancing{sortIndicator("advancing")}
                 </Link>
               </th>
-              <th className="px-3 py-2 text-right">
+              <th className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right">
                 <Link href={sortHref("scoredTeams")} className="hover:text-banana-400">
                   Scored teams{sortIndicator("scoredTeams")}
                 </Link>
               </th>
-              <th className="px-3 py-2 text-right">
+              <th className="px-2 py-2 sm:px-3 text-right">
                 <Link href={sortHref("rate")} className="hover:text-banana-400">
                   Rate{sortIndicator("rate")}
                 </Link>
@@ -207,21 +207,21 @@ export default async function AdvancementPage({
               const owner = ownerByWallet.get(r.ownerWallet);
               return (
                 <tr key={r.ownerWallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-3 py-2 text-zinc-400">{i + 1}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 sm:px-3 text-zinc-400">{i + 1}</td>
+                  <td className="px-2 py-2 sm:px-3">
                     <Link href={`/owner/${r.ownerWallet}`} className="flex items-center gap-2 hover:text-banana-400">
                       <OwnerAvatar imageUrl={owner?.imageUrl} />
                       <span>{owner?.displayName ?? shortWallet(r.ownerWallet)}</span>
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono">{r.advancing}</td>
-                  <td className="px-3 py-2 text-right font-mono text-zinc-400">
+                  <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.advancing}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">
                     {r.scoredTeams}
                     {r.totalTeams > r.scoredTeams && (
                       <span className="text-xs text-zinc-500"> ({r.totalTeams - r.scoredTeams} unscored)</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono font-semibold">
+                  <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">
                     {r.advancing}/{r.scoredTeams} ({((r.rate ?? 0) * 100).toFixed(0)}%)
                   </td>
                 </tr>
