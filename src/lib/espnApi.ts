@@ -21,9 +21,14 @@
  *     athlete) — that's why getTeamRoster() below exists.
  *   - /apis/site/v2/sports/football/nfl/teams/<abbr>/roster — that team's
  *     current roster, WITH position (athletes[].items[].position.abbreviation).
- *     Used to classify a boxscore player as WR vs TE (RB and QB are inferred
- *     straight from which stat category they appear in — see sbsScoring.ts
- *     — so this is really only needed to split the receiving category).
+ *     This is what decides which slot group (QB/RB/WR/TE) a boxscore player
+ *     counts toward — see sbsScoring.ts's classify(). Matched by ESPN athlete
+ *     id (the boxscore carries it), falling back to name.
+ *   - sports.core.api.espn.com/v2/.../events/<id>/competitions/<id>/
+ *     competitors/<teamId>/statistics — ESPN's fuller per-team game stats.
+ *     The only place forced fumbles, blocked kicks and kick/punt return TDs
+ *     show up (the summary endpoint above has none of them). Added
+ *     2026-09-28 for D/ST scoring — see getTeamDefenseExtras().
  *
  * Same undocumented-endpoint caveats as sbsApi.ts: ESPN can change this
  * shape or rate-limit it without notice. Keep sync tolerant (log + skip a
@@ -115,6 +120,7 @@ export async function getScoreboard(params?: {
 /** One player's stat line within one category, e.g. rushing. `stats` lines
  * up positionally with the category's `keys` (see StatCategory). */
 export interface CategoryAthlete {
+  id: string; // ESPN athlete id — stable across boxscore and roster, unlike display names
   displayName: string;
   stats: string[];
 }
@@ -127,6 +133,7 @@ export interface StatCategory {
 
 export interface TeamBoxscore {
   abbreviation: string;
+  espnTeamId: string; // needed for the core-API team stats call (getTeamDefenseExtras)
   homeAway: "home" | "away";
   categories: StatCategory[];
   teamStats: Record<string, string>; // flat name -> displayValue, e.g. { fumblesLost: "1", defensiveTouchdowns: "0" }
@@ -136,7 +143,7 @@ export interface GameBoxscore {
   espnEventId: string;
   completed: boolean;
   teams: TeamBoxscore[]; // always length 2
-  scoringPlays: { team: string; typeText: string }[];
+  scoringPlays: { team: string; typeText: string; text: string }[];
 }
 
 /** Full box score for one game, reshaped into the flatter form sbsScoring.ts consumes. */
@@ -155,6 +162,7 @@ export async function getGameBoxscore(espnEventId: string): Promise<GameBoxscore
       name: cat.name,
       keys: cat.keys ?? [],
       athletes: (cat.athletes ?? []).map((a: any) => ({
+        id: String(a.athlete?.id ?? ""),
         displayName: a.athlete?.displayName ?? "Unknown",
         stats: a.stats ?? [],
       })),
@@ -163,25 +171,32 @@ export async function getGameBoxscore(espnEventId: string): Promise<GameBoxscore
     for (const s of t.statistics ?? []) {
       if (s.name) teamStats[s.name] = s.displayValue ?? String(s.value ?? "");
     }
-    return { abbreviation: abbr, homeAway: t.homeAway, categories, teamStats };
+    return { abbreviation: abbr, espnTeamId: String(t.team?.id ?? ""), homeAway: t.homeAway, categories, teamStats };
   });
 
   const scoringPlays = (data.scoringPlays ?? []).map((sp: any) => ({
     team: sp.team?.abbreviation ?? "UNK",
     typeText: sp.type?.text ?? "",
+    text: sp.text ?? "",
   }));
 
   return { espnEventId, completed, teams, scoringPlays };
 }
 
-/** lowercased full name -> position abbreviation (e.g. "QB","RB","WR","TE"), offense only. */
-export type RosterPositions = Map<string, string>;
+/** A team's roster positions ("QB","RB","WR","TE",...), looked up by ESPN
+ * athlete id first and lowercased display name as a fallback. */
+export interface RosterPositions {
+  byId: Map<string, string>;
+  byName: Map<string, string>;
+}
 
 /**
- * One team's current roster, position-only lookup. Only the "offense" group
- * is kept — sbsScoring.ts only ever needs this to tell WR from TE (QB/RB are
- * inferred from which boxscore stat category a player appears in), and
- * keeping just offense keeps the map small and the name-collision risk low.
+ * One team's current roster, position-only lookup. Covers EVERY roster
+ * group, not just "offense": a player who played in week 1 and has since
+ * gone on injured reserve, been suspended or moved to the practice squad
+ * only appears in those groups, and before 2026-09-28 (offense only) such a
+ * player fell through to a stats-based guess. Keyed by athlete id, so two
+ * players sharing a name can't collide.
  *
  * `abbr` should be lowercase for this endpoint (ESPN's team-abbreviation
  * path segment is case-sensitive lowercase, unlike the boxscore/scoreboard
@@ -189,13 +204,52 @@ export type RosterPositions = Map<string, string>;
  */
 export async function getTeamRoster(abbr: string): Promise<RosterPositions> {
   const data = await getJson<any>(`/teams/${abbr.toLowerCase()}/roster`);
-  const map: RosterPositions = new Map();
-  const groups: any[] = data.athletes ?? [];
-  const offense = groups.find((g) => g.position === "offense");
-  for (const item of offense?.items ?? []) {
-    const name = item.displayName;
-    const pos = item.position?.abbreviation;
-    if (name && pos) map.set(name.toLowerCase(), pos);
+  const roster: RosterPositions = { byId: new Map(), byName: new Map() };
+  for (const group of (data.athletes ?? []) as any[]) {
+    for (const item of group.items ?? []) {
+      const pos = item.position?.abbreviation;
+      if (!pos) continue;
+      if (item.id != null) roster.byId.set(String(item.id), pos);
+      const name = String(item.displayName ?? "").toLowerCase();
+      if (name && !roster.byName.has(name)) roster.byName.set(name, pos);
+    }
   }
-  return map;
+  return roster;
+}
+
+/** D/ST stats only ESPN's core API has — see getTeamDefenseExtras(). */
+export interface TeamDefenseExtras {
+  fumblesForced: number;
+  kicksBlocked: number;
+  returnTouchdowns: number; // kickoff + punt return TDs scored by this team
+}
+
+/**
+ * Forced fumbles, blocked kicks and kick/punt return TDs for one team in
+ * one game, from ESPN's core stats API (the summary endpoint has none of
+ * them). Checked against SBS's own D/ST scores for weeks 1-3 of 2026: with
+ * these added, 91 of 94 D/ST scores match SBS exactly (was 22 of 94).
+ */
+export async function getTeamDefenseExtras(espnEventId: string, espnTeamId: string): Promise<TeamDefenseExtras> {
+  const url =
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/${encodeURIComponent(espnEventId)}` +
+    `/competitions/${encodeURIComponent(espnEventId)}/competitors/${encodeURIComponent(espnTeamId)}/statistics`;
+  const res = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+  if (isRateLimitStatus(res.status)) {
+    throw Object.assign(new Error(`ESPN core API ${url} -> HTTP 429 (rate limited)`), { rateLimited: true });
+  }
+  if (!res.ok) throw new Error(`ESPN core API ${url} -> HTTP ${res.status}`);
+  const data: any = await res.json();
+  const stat: Record<string, number> = {};
+  for (const cat of data.splits?.categories ?? []) {
+    for (const st of cat.stats ?? []) stat[`${cat.name}.${st.name}`] = Number(st.value) || 0;
+  }
+  return {
+    fumblesForced: stat["general.fumblesForced"] ?? 0,
+    kicksBlocked: stat["defensive.kicksBlocked"] ?? 0,
+    // "returning" = returns BY this team. (The "kicking" category also has a
+    // kickoffReturnTouchdowns stat, but that one doesn't line up with this
+    // team's own scoring plays, so it's not used.)
+    returnTouchdowns: (stat["returning.kickReturnTouchdowns"] ?? 0) + (stat["returning.puntReturnTouchdowns"] ?? 0),
+  };
 }

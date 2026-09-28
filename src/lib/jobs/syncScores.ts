@@ -1,6 +1,14 @@
 import { writeSync } from "fs";
 import { prisma } from "@/lib/db";
-import { getScoreboard, getGameBoxscore, getTeamRoster, RosterPositions, EspnScoreboardEvent } from "@/lib/espnApi";
+import {
+  getScoreboard,
+  getGameBoxscore,
+  getTeamDefenseExtras,
+  getTeamRoster,
+  RosterPositions,
+  EspnScoreboardEvent,
+  TeamDefenseExtras,
+} from "@/lib/espnApi";
 import { computeTeamPositionScores } from "@/lib/sbsScoring";
 
 function log(msg: string) {
@@ -41,11 +49,16 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
  * current) so a Monday/late game that finishes after that day's last run,
  * or a run that gets skipped entirely, still gets picked up on the next
  * one — same "tolerant, self-healing" idea as this codebase's other sync
- * jobs, just windowed by week instead of by draft-id range. A game whose
- * NflGame.status is ALREADY "final" from a prior run is skipped (no
- * re-fetch of its box score / no re-score) — final results don't change,
- * so there's nothing to gain from re-summarizing a game we've already
- * scored, and skipping keeps this job cheap even at "every game" scope.
+ * jobs, just windowed by week instead of by draft-id range.
+ *
+ * Every final game in that window is RE-scored on every run, not just
+ * newly-final ones (changed 2026-09-28). The NFL issues stat corrections
+ * for days after a game, and a fix to the scoring rules should reach games
+ * already scored. That's at most ~32 box scores per run, which is fine
+ * every 3 hours.
+ *
+ * To re-score older weeks once (e.g. after a scoring fix), set SCORES_WEEKS:
+ *   SCORES_WEEKS=1-3 npm run sync:scores      (or "1,2,3")
  *
  * Regular season only (seasonType=2) for now — postseason has its own
  * quirks (byes, single-elim, a champ week) not worth the edge cases until
@@ -66,8 +79,10 @@ export async function runSyncScores() {
       throw new Error("Could not determine current NFL week from ESPN scoreboard — empty/unexpected response");
     }
 
-    const targetWeeks = [{ season: currentSeason, week: currentWeek }];
-    if (currentWeek > 1) targetWeeks.push({ season: currentSeason, week: currentWeek - 1 });
+    const targetWeeks = parseWeeksOverride(process.env.SCORES_WEEKS, currentSeason) ?? [
+      { season: currentSeason, week: currentWeek },
+      ...(currentWeek > 1 ? [{ season: currentSeason, week: currentWeek - 1 }] : []),
+    ];
     log(`[sync-scores] target weeks: ${targetWeeks.map((w) => `${w.season} wk${w.week}`).join(", ")}`);
 
     const allEvents: EspnScoreboardEvent[] = [];
@@ -76,12 +91,6 @@ export async function runSyncScores() {
       allEvents.push(...events);
     }
     log(`[sync-scores] ${allEvents.length} games across ${targetWeeks.length} week(s)`);
-
-    const existing = await prisma.nflGame.findMany({
-      where: { espnEventId: { in: allEvents.map((e) => e.espnEventId) } },
-      select: { espnEventId: true, status: true },
-    });
-    const existingStatus = new Map(existing.map((e) => [e.espnEventId, e.status]));
 
     // Upsert every game's shell (score/status/kickoff) regardless of
     // status, so the week view always has a complete slate.
@@ -108,8 +117,8 @@ export async function runSyncScores() {
       });
     }
 
-    const needsScoring = allEvents.filter((ev) => ev.status === "final" && existingStatus.get(ev.espnEventId) !== "final");
-    log(`[sync-scores] ${needsScoring.length} newly-final game(s) need box-score scoring`);
+    const needsScoring = allEvents.filter((ev) => ev.status === "final");
+    log(`[sync-scores] scoring ${needsScoring.length} final game(s)`);
 
     const rosterCache = new Map<string, RosterPositions>();
     async function rosterFor(abbr: string): Promise<RosterPositions> {
@@ -120,9 +129,21 @@ export async function runSyncScores() {
       return roster;
     }
 
-    // Small concurrency: at most ~32 games in scope, and only "newly
-    // final" ones ever reach this loop — gentle enough not to need
-    // syncStandings.ts-style batch tuning.
+    // Forced fumbles / blocked kicks / return TDs for D/ST come from a
+    // second ESPN API (see getTeamDefenseExtras). Non-fatal: if it fails,
+    // that team's D/ST is scored without them rather than failing the game.
+    async function extrasFor(eventId: string, teamId: string, abbr: string): Promise<TeamDefenseExtras | undefined> {
+      if (!teamId) return undefined;
+      try {
+        return await withRetry(() => getTeamDefenseExtras(eventId, teamId));
+      } catch (err) {
+        log(`[sync-scores] D/ST extras for ${abbr} in game ${eventId} unavailable, scoring without them: ${String(err)}`);
+        return undefined;
+      }
+    }
+
+    // Small concurrency: at most ~32 games in scope — gentle enough not to
+    // need syncStandings.ts-style batch tuning.
     const CONCURRENCY = Number(process.env.SCORES_SYNC_CONCURRENCY ?? 3);
     let scored = 0;
     let failed = 0;
@@ -133,10 +154,17 @@ export async function runSyncScores() {
         try {
           const box = await withRetry(() => getGameBoxscore(ev.espnEventId));
           const [awayRoster, homeRoster] = await Promise.all([rosterFor(ev.awayTeam), rosterFor(ev.homeTeam)]);
+          const defenseExtras: Record<string, TeamDefenseExtras | undefined> = {};
+          await Promise.all(
+            box.teams.map(async (t) => {
+              defenseExtras[t.abbreviation] = await extrasFor(ev.espnEventId, t.espnTeamId, t.abbreviation);
+            }),
+          );
           const rows = computeTeamPositionScores(
             box,
             { awayScore: ev.awayScore ?? 0, homeScore: ev.homeScore ?? 0 },
             { [ev.awayTeam]: awayRoster, [ev.homeTeam]: homeRoster },
+            defenseExtras,
           );
           for (const row of rows) {
             await prisma.teamPositionScore.upsert({
@@ -165,7 +193,7 @@ export async function runSyncScores() {
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    log(`[sync-scores] done: ${allEvents.length} games synced, ${scored} newly scored, ${failed} failed`);
+    log(`[sync-scores] done: ${allEvents.length} games synced, ${scored} scored, ${failed} failed`);
     await prisma.syncLog.update({
       where: { id: syncLogRow.id },
       data: { finishedAt: new Date(), recordCount: scored, ok: true },
@@ -178,4 +206,17 @@ export async function runSyncScores() {
     });
     throw err;
   }
+}
+
+/** "1-3" or "1,2,3" -> those weeks of `season`; undefined/blank -> null (use the default window). */
+function parseWeeksOverride(value: string | undefined, season: number): { season: number; week: number }[] | null {
+  if (!value || !value.trim()) return null;
+  const weeks = new Set<number>();
+  for (const part of value.split(",")) {
+    const [a, b] = part.split("-").map((x) => Number(x.trim()));
+    if (!Number.isInteger(a)) throw new Error(`SCORES_WEEKS: can't read "${part}" (use e.g. "1-3" or "1,2,3")`);
+    const end = Number.isInteger(b) ? b : a;
+    for (let w = a; w <= end; w++) weeks.add(w);
+  }
+  return [...weeks].sort((x, y) => x - y).map((week) => ({ season, week }));
 }

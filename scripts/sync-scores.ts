@@ -5,7 +5,7 @@
  *
  * Powers the /scores tab (SBS "Team Positions" box scores for every real
  * NFL game). Light compared to sync-standings.ts/sync-sbs-trades.ts — at
- * most ~32 games in scope (current + previous week) and only newly-final
+ * most ~32 games in scope (current + previous week, or SCORES_WEEKS) and only final
  * ones ever trigger a box-score fetch — so a generous watchdog isn't
  * expected to matter here, but every other sync script in this repo has
  * one and a run against a slow/rate-limited ESPN is exactly the kind of
@@ -29,7 +29,7 @@ async function main() {
   const result = await runSyncScores();
   writeSync(
     1,
-    `[sync-scores] ${result.games} games synced, ${result.scored} newly scored, ${result.failed} failed\n`,
+    `[sync-scores] ${result.games} games synced, ${result.scored} scored, ${result.failed} failed\n`,
   );
 }
 
