@@ -6,6 +6,7 @@ import {
   getCurrentGameweek,
   getFounderTokenIds,
   getFullStandings,
+  getSbsNftScore,
   getUserProfiles,
   SbsStandingsRow,
 } from "@/lib/sbsApi";
@@ -79,7 +80,8 @@ export async function runSyncStandings() {
 
     const draftIds: string[] = [];
     for (const { prefix, max } of DRAFT_ID_RANGES) {
-      for (let n = 1; n <= max; n++) draftIds.push(`${prefix}${n}`);
+      // From 0, not 1 — see DRAFT_ID_RANGES in sbsApi.ts (BBB #1 and BBB #14 live at index 0).
+      for (let n = 0; n <= max; n++) draftIds.push(`${prefix}${n}`);
     }
     log(`[sync-standings] walking ${draftIds.length} candidate pods (most will miss — that's expected)...`);
 
@@ -141,7 +143,7 @@ export async function runSyncStandings() {
       const candidateWallets = [...new Set(specialRows.map((r) => r.ownerWallet))];
       const candidates = await prisma.team.findMany({
         where: { seasonSlug: season.slug, ownerWallet: { in: candidateWallets }, status: { not: "draft_pass" } },
-        select: { cardId: true, leagueId: true, ownerWallet: true },
+        select: { cardId: true, leagueId: true, ownerWallet: true, level: true, leagueName: true },
       });
       const byPodOwner = new Map<string, string[]>();
       for (const c of candidates) {
@@ -150,11 +152,38 @@ export async function runSyncStandings() {
         if (arr) arr.push(c.cardId);
         else byPodOwner.set(key, [c.cardId]);
       }
+      // Fallback match, added 2026-10-05: a Wheel/Promo pick whose Team row
+      // came from OpenSea (scripts/sync-collection.ts) has leagueId
+      // "sbs-league-12" / leagueName "BBB #12", never SBS's "2025-slow-
+      // draft-5" / "HOF #12 (from Wheel)", so the (leagueId, owner) match
+      // above can never find it — 81 such teams were sitting unscored. The
+      // league NUMBER and level do line up, so match on (owner, level,
+      // league #), skipping any card that already got a real score this run
+      // and any card another pick already claimed. Once matched, the write
+      // below stores SBS's leagueId/leagueName on the Team, so the next run
+      // matches it the first way.
+      const realCardIds = new Set(rows.filter((r) => !r.cardId.startsWith("special-")).map((r) => r.cardId));
+      const claimed = new Set<string>();
+      const leagueNumber = (name: string) => name.match(/#(\d+)/)?.[1] ?? null;
       let resolved = 0;
       for (const row of specialRows) {
-        const matches = byPodOwner.get(`${row.leagueId}::${row.ownerWallet}`) ?? [];
+        let matches = (byPodOwner.get(`${row.leagueId}::${row.ownerWallet}`) ?? []).filter((id) => !claimed.has(id));
+        if (matches.length !== 1) {
+          const num = leagueNumber(row.leagueName);
+          matches = candidates
+            .filter(
+              (c) =>
+                c.ownerWallet === row.ownerWallet &&
+                c.level === row.level &&
+                !realCardIds.has(c.cardId) &&
+                !claimed.has(c.cardId) &&
+                (c.leagueName === row.leagueName || (num != null && leagueNumber(c.leagueName) === num)),
+            )
+            .map((c) => c.cardId);
+        }
         if (matches.length === 1) {
           row.cardId = matches[0]; // mutates in place — same object rowsByCardId/rows already hold
+          claimed.add(matches[0]);
           resolved++;
         }
         // 0 matches: real card not minted/synced yet (sync-collection.ts
@@ -363,6 +392,47 @@ export async function runSyncStandings() {
         log(`[sync-standings] wrote ${Math.min(i + WRITE_BATCH, finalRows.length)}/${finalRows.length} team+score rows...`);
       }
     }
+
+    // Backstop: any team we know about that STILL has no score for this
+    // gameweek (a pick the walk couldn't match, a pod outside the walked
+    // ranges, ...) gets its score straight from SBS's NFT metadata instead
+    // — the same numbers SBS shows on the team's own page. Keeps the site
+    // from showing "unscored" teams that SBS has scores for.
+    const missing = await prisma.team.findMany({
+      where: { seasonSlug: season.slug, status: { not: "draft_pass" }, scores: { none: { gameweek } } },
+      select: { cardId: true },
+      take: 1000,
+    });
+    let backfilled = 0;
+    let missIdx = 0;
+    const seasonSlug = season.slug; // captured: TS doesn't carry the null-check into the closure below
+    async function backfillWorker() {
+      while (missIdx < missing.length) {
+        const { cardId } = missing[missIdx++];
+        try {
+          const score = await withRetry(() => getSbsNftScore(cardId), `nft ${cardId}`);
+          if (!score) continue;
+          await prisma.scoreSnapshot.upsert({
+            where: { seasonSlug_teamCardId_gameweek: { seasonSlug, teamCardId: cardId, gameweek } },
+            create: {
+              seasonSlug,
+              teamCardId: cardId,
+              gameweek,
+              rank: score.rank,
+              weeklyScore: score.weeklyScore,
+              seasonScore: score.seasonScore,
+            },
+            update: { rank: score.rank, weeklyScore: score.weeklyScore, seasonScore: score.seasonScore, capturedAt: new Date() },
+          });
+          backfilled++;
+        } catch (err) {
+          log(`[sync-standings] NFT score backfill for #${cardId} failed: ${String(err)}`);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => backfillWorker()));
+    log(`[sync-standings] ${missing.length} teams had no score from the pod walk; filled ${backfilled} from SBS's NFT data`);
+    written += backfilled;
 
     log(`[sync-standings] wrote ${written} rows, cleaning up phantom rows...`);
 

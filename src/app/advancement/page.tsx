@@ -136,8 +136,8 @@ export default async function AdvancementPage({
           : " · no full standings sync yet — run `npm run sync:standings`"}
         {" — "}
         per SBS&rsquo;s rules, every pod is 10 teams and the top 2 by season score advance out of
-        Weeks 1&ndash;14, the same way across every level. Rate = advancing teams ÷ teams that have
-        a score so far (a team with no score yet doesn&rsquo;t count against you).
+        Weeks 1&ndash;14, the same way across every level. Rate = advancing teams ÷ scored
+        teams.
       </p>
 
       <div className="mb-3">
@@ -217,9 +217,6 @@ export default async function AdvancementPage({
                   <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.advancing}</td>
                   <td className="hidden sm:table-cell px-2 py-2 sm:px-3 text-right font-mono text-zinc-400">
                     {r.scoredTeams}
-                    {r.totalTeams > r.scoredTeams && (
-                      <span className="text-xs text-zinc-500"> ({r.totalTeams - r.scoredTeams} unscored)</span>
-                    )}
                   </td>
                   <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">
                     {r.advancing}/{r.scoredTeams} ({((r.rate ?? 0) * 100).toFixed(0)}%)

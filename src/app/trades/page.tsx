@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { positionOf } from "@/lib/opensea";
 import SeasonTabs from "@/components/SeasonTabs";
+import TeamsForSale from "@/components/TeamsForSale";
 import { getAllSeasons, resolveSeason } from "@/lib/seasons";
 import { getPodRanks, podRankByCardId, ordinal, PodKey } from "@/lib/advancement";
 
@@ -54,6 +55,7 @@ export default async function TradesPage({
     posDir?: string;
     traderSort?: string;
     traderDir?: string;
+    pos?: string; // "Teams for sale" search, e.g. "BUF QB"
   };
 }) {
   const [season, seasons] = await Promise.all([
@@ -78,6 +80,7 @@ export default async function TradesPage({
   function posSortHref(column: PosSortKey) {
     const params = new URLSearchParams();
     params.set("season", season.slug);
+    if (searchParams.pos) params.set("pos", searchParams.pos);
     if (searchParams.traderSort) params.set("traderSort", searchParams.traderSort);
     if (searchParams.traderDir) params.set("traderDir", searchParams.traderDir);
     params.set("posSort", column);
@@ -97,6 +100,7 @@ export default async function TradesPage({
   function traderSortHref(column: TraderSortKey) {
     const params = new URLSearchParams();
     params.set("season", season.slug);
+    if (searchParams.pos) params.set("pos", searchParams.pos);
     if (searchParams.posSort) params.set("posSort", searchParams.posSort);
     if (searchParams.posDir) params.set("posDir", searchParams.posDir);
     params.set("traderSort", column);
@@ -289,6 +293,18 @@ export default async function TradesPage({
         <SeasonTabs seasons={seasons} current={season.slug} basePath="/trades" />
       </div>
 
+      {/* Marketplaces only matter for the live season's teams. */}
+      {season.isActive && (
+        <TeamsForSale
+          seasonSlug={season.slug}
+          chain={season.chain}
+          contract={season.contract}
+          collectionSlug={season.collectionSlug}
+          query={searchParams.pos}
+          season={searchParams.season}
+        />
+      )}
+
       {sales.length === 0 && (
         <p className="text-sm text-zinc-500">
           No sales synced yet for {season.name}. Once <code>npm run sync:sales</code> has run at least
@@ -331,7 +347,19 @@ export default async function TradesPage({
               <tbody>
                 {posRows.map((r) => (
                   <tr key={r.value} className="border-t border-ink-600">
-                    <td className="px-2 py-2 sm:px-3 font-medium">{r.value}</td>
+                    <td className="px-2 py-2 sm:px-3 font-medium">
+                      {season.isActive ? (
+                        <Link
+                          href={`/trades?pos=${encodeURIComponent(r.value)}`}
+                          className="hover:text-banana-400"
+                          title={`Teams for sale with ${r.value}`}
+                        >
+                          {r.value}
+                        </Link>
+                      ) : (
+                        r.value
+                      )}
+                    </td>
                     <td className="px-2 py-2 sm:px-3 text-zinc-400">{r.position}</td>
                     <td className="px-2 py-2 sm:px-3 text-right font-mono">{r.count}</td>
                     <td className="px-2 py-2 sm:px-3 text-right font-mono font-semibold">

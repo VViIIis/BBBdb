@@ -78,6 +78,11 @@ export interface SbsLeaderboardRow {
  *     JackHOF/Promo/Wheel/Banana-Race leagues) -> DRAFT_ID_RANGES uses 150
  *   - 2025-fast-draft- : none found from 1-200 or at any power of 2 up to
  *     4096 — omitted entirely (doesn't seem to exist).
+ *
+ * Numbering starts at 0, not 1 (found 2026-10-05): "2026-fast-draft-0" is
+ * BBB #1 and "2026-slow-draft-0" is BBB #14, and the walk used to start at
+ * 1, so those 20 teams never got a score. Confirmed with SBS's own
+ * /api/league-id?number=N lookup.
  */
 export const DRAFT_ID_RANGES: { prefix: string; max: number }[] = [
   { prefix: "2026-slow-draft-", max: 200 },
@@ -226,6 +231,111 @@ export async function getUserProfiles(
   if (!res.ok) throw new Error(`SBS API display-batch -> HTTP ${res.status}`);
   const data = (await res.json()) as { users: Record<string, SbsUserProfile> };
   return data.users;
+}
+
+/** A team's current score straight from SBS's NFT metadata (see getSbsNftScore). */
+export interface SbsNftScore {
+  weeklyScore: number;
+  seasonScore: number;
+  rank: number | null;
+  leagueName: string | null;
+}
+
+/**
+ * One team's CURRENT score from SBS's own NFT metadata endpoint
+ * (/api/marketplace/nft/<tokenId>, traits SEASON-SCORE / WEEK-SCORE / RANK /
+ * LEAGUE-NAME). syncStandings.ts uses this as a backstop for any team the
+ * per-pod walk couldn't score — e.g. a Wheel/Promo pick that /api/standings
+ * still lists under a synthetic "special-*" id. Returns null if the token
+ * doesn't exist or has no score yet.
+ */
+export async function getSbsNftScore(tokenId: string): Promise<SbsNftScore | null> {
+  const res = await fetch(`${BASE_URL}/api/marketplace/nft/${encodeURIComponent(tokenId)}`, {
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (isRateLimitStatus(res.status)) {
+    throw Object.assign(new Error(`SBS API marketplace/nft/${tokenId} -> HTTP 429 (rate limited)`), { rateLimited: true });
+  }
+  if (!res.ok) throw new Error(`SBS API marketplace/nft/${tokenId} -> HTTP ${res.status}`);
+  const data = (await res.json()) as { traits?: { trait_type: string; value: string | number }[] };
+  const trait = (name: string) => data.traits?.find((t) => t.trait_type === name)?.value;
+  const season = Number(trait("SEASON-SCORE"));
+  const weekly = Number(trait("WEEK-SCORE"));
+  if (!Number.isFinite(season)) return null;
+  const rank = Number(trait("RANK"));
+  const leagueName = trait("LEAGUE-NAME");
+  return {
+    seasonScore: season,
+    weeklyScore: Number.isFinite(weekly) ? weekly : 0,
+    rank: Number.isFinite(rank) && rank > 0 ? rank : null,
+    leagueName: leagueName != null ? String(leagueName) : null,
+  };
+}
+
+/** One team currently listed for sale on SBS's own marketplace. */
+export interface SbsListing {
+  tokenId: string;
+  price: number; // USDC
+  points: number; // season points, per SBS
+  rank: number | null; // SBS's global rank
+  draftType: string; // "pro" | "hof" | "jackpot" | ...
+  owner: string; // seller's SBS username ("" if none)
+  ownerAddress: string;
+  roster: string[]; // team positions, e.g. ["BUF QB", "IND RB1", ...]
+  leagueNumber: number | null;
+  orderHash: string; // Seaport order hash, lowercase — used to spot the same order on OpenSea
+}
+
+/**
+ * Every team currently listed on SBS's in-app marketplace, cheapest first.
+ * Confirmed live 2026-09-29: GET /api/marketplace/listings?sort=price&
+ * direction=asc&limit=50 returns {listings, next}; pass `next` back as
+ * `cursor` for the following page (other param names are ignored and just
+ * repeat page 1). About 90 teams were listed that day, so this is 2-3 calls.
+ * Each listing already carries its roster as team positions ("BUF QB"),
+ * which is what the Trades tab's "Teams for sale" search matches against.
+ *
+ * Cached for 60 seconds (Next.js fetch cache) so a busy Trades page doesn't
+ * call SBS on every visit, while prices and new listings still show up
+ * within a minute.
+ */
+export async function getMarketplaceListings(): Promise<SbsListing[]> {
+  const out: SbsListing[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  for (let page = 0; page < 40; page++) {
+    const qs = new URLSearchParams({ sort: "price", direction: "asc", limit: "50" });
+    if (cursor) qs.set("cursor", cursor);
+    const res = await fetch(`${BASE_URL}/api/marketplace/listings?${qs}`, {
+      headers: { accept: "application/json" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) throw new Error(`SBS API marketplace/listings -> HTTP ${res.status}`);
+    const data = (await res.json()) as { listings?: any[]; next?: string | null };
+    for (const l of data.listings ?? []) {
+      const tokenId = String(l?.tokenId ?? l?.id ?? "");
+      const price = Number(l?.price);
+      if (!tokenId || seen.has(tokenId) || !Number.isFinite(price)) continue;
+      seen.add(tokenId);
+      out.push({
+        tokenId,
+        price,
+        points: Number(l?.points) || 0,
+        rank: Number.isFinite(Number(l?.rank)) && Number(l?.rank) > 0 ? Number(l.rank) : null,
+        draftType: String(l?.draftType ?? ""),
+        owner: String(l?.owner ?? ""),
+        ownerAddress: String(l?.ownerAddress ?? "").toLowerCase(),
+        roster: Array.isArray(l?.roster) ? l.roster.map(String) : [],
+        leagueNumber: l?.leagueNumber != null ? Number(l.leagueNumber) : null,
+        orderHash: String(l?.orderHash ?? "").toLowerCase(),
+      });
+    }
+    cursor = data.next ?? null;
+    if (!cursor || (data.listings ?? []).length === 0) break;
+  }
+  return out.sort((a, b) => a.price - b.price);
 }
 
 /**

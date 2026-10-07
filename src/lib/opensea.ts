@@ -131,6 +131,66 @@ export async function getCollectionSaleEvents(
   return { events: data.asset_events ?? [], next: data.next ?? null };
 }
 
+// --- Active listings (powers the "Teams for sale" search on /trades) ---
+
+/** One active OpenSea listing — the cheapest one for its NFT. */
+export interface OpenSeaListing {
+  tokenId: string;
+  orderHash: string;
+  price: number; // in `currency` units, already divided by 10^decimals
+  currency: string; // e.g. "USDC", "ETH", "WETH"
+  seller: string; // lowercase wallet
+}
+
+/**
+ * The cheapest active listing for every listed NFT in a collection
+ * (GET /listings/collection/{slug}/best, 100 per page, `next` cursor).
+ * Field names follow OpenSea's documented v2 listing shape:
+ * price.current.{value,decimals,currency} and
+ * protocol_data.parameters.{offerer, offer[0].identifierOrCriteria}. Both
+ * snake_case and camelCase spellings are accepted, and any listing that
+ * can't be read is skipped rather than failing the whole page.
+ *
+ * Cached for 60 seconds, same as SBS's marketplace listings
+ * (sbsApi.ts's getMarketplaceListings), so the Trades page doesn't call
+ * OpenSea on every visit.
+ */
+export async function getCollectionBestListings(collectionSlug: string): Promise<OpenSeaListing[]> {
+  const out: OpenSeaListing[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 20; page++) {
+    const params = new URLSearchParams({ limit: "100" });
+    if (cursor) params.set("next", cursor);
+    const res = await fetch(`${OPENSEA_BASE}/listings/collection/${collectionSlug}/best?${params}`, {
+      headers: { accept: "application/json", "x-api-key": apiKey() },
+      next: { revalidate: 60 },
+    });
+    if (res.status === 429) throw Object.assign(new Error("rate limited"), { rateLimited: true });
+    if (!res.ok) {
+      throw new Error(`OpenSea API listings/collection/${collectionSlug}/best -> HTTP ${res.status}: ${await res.text()}`);
+    }
+    const data = (await res.json()) as { listings?: any[]; next?: string | null };
+    for (const l of data.listings ?? []) {
+      const params0 = (l?.protocol_data ?? l?.protocolData)?.parameters;
+      const tokenId = params0?.offer?.[0]?.identifierOrCriteria ?? params0?.offer?.[0]?.identifier_or_criteria;
+      const current = l?.price?.current;
+      const decimals = Number(current?.decimals ?? 18);
+      const raw = Number(current?.value);
+      if (tokenId == null || !Number.isFinite(raw)) continue;
+      out.push({
+        tokenId: String(tokenId),
+        orderHash: String(l?.order_hash ?? l?.orderHash ?? "").toLowerCase(),
+        price: raw / 10 ** decimals,
+        currency: String(current?.currency ?? "ETH").toUpperCase(),
+        seller: String(params0?.offerer ?? "").toLowerCase(),
+      });
+    }
+    cursor = data.next ?? null;
+    if (!cursor || (data.listings ?? []).length === 0) break;
+  }
+  return out;
+}
+
 export function traitValue(nft: OpenSeaNft, traitType: string): string | number | undefined {
   return nft.traits.find((t) => t.trait_type.toLowerCase() === traitType.toLowerCase())?.value;
 }
