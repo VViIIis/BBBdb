@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import OwnerAvatar from "@/components/OwnerAvatar";
 import { prisma } from "@/lib/db";
 import SeasonTabs from "@/components/SeasonTabs";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { prisma } from "@/lib/db";
 import { positionOf } from "@/lib/opensea";
 import SeasonTabs from "@/components/SeasonTabs";

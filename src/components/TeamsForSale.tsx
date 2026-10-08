@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { prisma } from "@/lib/db";
 import { getMarketplaceListings, SbsListing } from "@/lib/sbsApi";
 import { getCollectionBestListings, OpenSeaListing } from "@/lib/opensea";

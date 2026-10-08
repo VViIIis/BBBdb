@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { KNOWN_LEVELS } from "@/lib/sbsApi";
 
 export default function LevelTabs({

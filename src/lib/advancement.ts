@@ -145,15 +145,25 @@ export async function getPodRanks(seasonSlug: string, pods?: PodKey[]): Promise<
   const cardIds = teams.map((t) => t.cardId);
   const latestByCard = new Map<string, { weeklyScore: number; seasonScore: number }>();
   if (cardIds.length > 0) {
-    const scores = await prisma.scoreSnapshot.findMany({
-      where: { seasonSlug, teamCardId: { in: cardIds }, ...REGULAR_SEASON_SNAPSHOTS },
-      orderBy: { capturedAt: "desc" },
-      select: { teamCardId: true, weeklyScore: true, seasonScore: true },
-    });
+    // DISTINCT ON lets Postgres pick each team's latest (regular-season)
+    // snapshot and send back ONE row per team. Changed 2026-10-07 from
+    // fetching every snapshot and keeping the first per team in JS: with a
+    // row per team per week that meant ~70k rows for BBB IV and ~200k for
+    // BBB III on every /advancement view, all parsed by Prisma — a big part
+    // of the function CPU that got the site paused on Vercel's Hobby plan.
+    // The week filter matches REGULAR_SEASON_SNAPSHOTS above.
+    const scores = await prisma.$queryRaw<{ teamCardId: string; weeklyScore: number; seasonScore: number }[]>`
+      SELECT DISTINCT ON ("teamCardId") "teamCardId", "weeklyScore", "seasonScore"
+      FROM "ScoreSnapshot"
+      WHERE "seasonSlug" = ${seasonSlug}
+        AND "teamCardId" = ANY(${cardIds})
+        AND "gameweek" NOT LIKE '%REG-15'
+        AND "gameweek" NOT LIKE '%REG-16'
+        AND "gameweek" NOT LIKE '%REG-17'
+      ORDER BY "teamCardId", "capturedAt" DESC
+    `;
     for (const s of scores) {
-      if (!latestByCard.has(s.teamCardId)) {
-        latestByCard.set(s.teamCardId, { weeklyScore: s.weeklyScore, seasonScore: s.seasonScore });
-      }
+      latestByCard.set(s.teamCardId, { weeklyScore: Number(s.weeklyScore), seasonScore: Number(s.seasonScore) });
     }
   }
 

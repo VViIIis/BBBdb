@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import SlotTabs, { isStatsSlot, StatsSlot } from "@/components/SlotTabs";
 import { getSlotLeaders, getStatsSeasons } from "@/lib/statsRollup";
 

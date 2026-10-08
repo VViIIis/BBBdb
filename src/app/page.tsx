@@ -1,5 +1,6 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import OwnerAvatar from "@/components/OwnerAvatar";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import LevelTabs from "@/components/LevelTabs";
 import SeasonTabs from "@/components/SeasonTabs";
@@ -51,6 +52,42 @@ const WEEKLY_PRIZE_BADGE_CLASS = [
   "bg-banana-400/55 text-ink-900",
   "bg-banana-400/40 text-ink-900",
 ];
+
+// Season-level facts the header and week picker need. They only change
+// when a sync runs, but each one scans every snapshot in the season (70k+
+// rows for BBB IV, ~270k for BBB III), so they're cached for 5 minutes
+// instead of re-run on every view — part of the 2026-10-07 fix after Vercel
+// paused the site for function CPU. Dates come back as ISO strings because
+// the cache stores JSON.
+const getSeasonMeta = unstable_cache(
+  async (seasonSlug: string) => {
+    const [latest, lastSync, gameweekGroups, finalsCount] = await Promise.all([
+      prisma.scoreSnapshot.findFirst({
+        where: { seasonSlug },
+        orderBy: { capturedAt: "desc" },
+        select: { gameweek: true, capturedAt: true },
+      }),
+      prisma.syncLog.findFirst({
+        where: { source: { in: ["sbs-leaderboard", "sbs-standings-full"] }, ok: true },
+        orderBy: { finishedAt: "desc" },
+        select: { finishedAt: true },
+      }),
+      // groupBy (a SQL GROUP BY) rather than findMany({ distinct }), which
+      // Prisma resolves by pulling every matching row into memory.
+      prisma.scoreSnapshot.groupBy({ by: ["gameweek"], where: { seasonSlug } }),
+      prisma.team.count({ where: { seasonSlug, status: "finals" } }),
+    ]);
+    return {
+      latestGameweek: latest?.gameweek ?? null,
+      latestCapturedAt: latest?.capturedAt?.toISOString() ?? null,
+      lastSyncAt: lastSync?.finishedAt?.toISOString() ?? null,
+      gameweeks: gameweekGroups.map((g) => g.gameweek),
+      finalsCount,
+    };
+  },
+  ["leaderboard-season-meta"],
+  { revalidate: 300 },
+);
 
 export default async function LeaderboardPage({
   searchParams,
@@ -104,29 +141,16 @@ export default async function LeaderboardPage({
   // frequent, top-500-only; sbs-standings-full: heavy, less frequent, every
   // team — see syncStandings.ts) — whichever ran most recently is what's
   // actually reflected in the DB, so take the max of the two.
-  const [latest, lastSync, gameweekGroups] = await Promise.all([
-    prisma.scoreSnapshot.findFirst({
-      where: { seasonSlug: season.slug },
-      orderBy: { capturedAt: "desc" },
-      select: { gameweek: true, capturedAt: true },
-    }),
-    prisma.syncLog.findFirst({
-      where: { source: { in: ["sbs-leaderboard", "sbs-standings-full"] }, ok: true },
-      orderBy: { finishedAt: "desc" },
-      select: { finishedAt: true },
-    }),
-    // Every week this season has scores for, for the week picker. groupBy
-    // (a SQL GROUP BY) rather than findMany({ distinct }), which Prisma
-    // resolves by pulling every matching row into memory — ~200k rows for
-    // a full season.
-    prisma.scoreSnapshot.groupBy({ by: ["gameweek"], where: { seasonSlug: season.slug } }),
-  ]);
-  const lastSyncedAt = lastSync?.finishedAt ?? latest?.capturedAt ?? null;
+  const meta = await getSeasonMeta(season.slug);
+  const latest = meta.latestGameweek
+    ? { gameweek: meta.latestGameweek, capturedAt: new Date(meta.latestCapturedAt!) }
+    : null;
+  const lastSyncedAt = meta.lastSyncAt ? new Date(meta.lastSyncAt) : (latest?.capturedAt ?? null);
 
   // Week picker options: only real weeks ("2026REG-03"), in order. An
   // imported "bbb3-final"-style snapshot has no week number and is skipped.
-  const weekOptions = gameweekGroups
-    .map((g) => ({ gameweek: g.gameweek, week: weekNumberOf(g.gameweek) }))
+  const weekOptions = meta.gameweeks
+    .map((gameweek) => ({ gameweek, week: weekNumberOf(gameweek) }))
     .filter((w): w is { gameweek: string; week: number } => w.week != null)
     .sort((a, b) => a.week - b.week);
 
@@ -134,8 +158,7 @@ export default async function LeaderboardPage({
   // "finals", set by scripts/import-bbb3-history.ts for BBB III), ranked by
   // their week 17 score. That's exactly SBS's own finals leaderboard.
   const finalWeek = weekOptions.find((w) => w.week === 17) ?? null;
-  const hasFinals =
-    finalWeek != null && (await prisma.team.count({ where: { seasonSlug: season.slug, status: "finals" } })) > 0;
+  const hasFinals = finalWeek != null && meta.finalsCount > 0;
 
   const requestedWeek = weekOptions.find((w) => w.gameweek === searchParams.week) ?? null;
   // A finished season opens on its Finals (the result that matters); a live

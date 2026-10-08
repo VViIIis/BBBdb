@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 
 const SLOTS = ["QB", "RB1", "RB2", "WR1", "WR2", "TE", "DST"] as const;
 export type StatsSlot = (typeof SLOTS)[number];
