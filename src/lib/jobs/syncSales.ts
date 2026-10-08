@@ -1,5 +1,6 @@
 import { writeSync } from "fs";
 import { prisma } from "@/lib/db";
+import { hasSbsTwin } from "@/lib/saleDedupe";
 import { getCollectionSaleEvents, type OpenSeaSaleEvent } from "@/lib/opensea";
 
 // Same rationale as syncLeaderboard.ts: writeSync bypasses stdout buffering
@@ -79,6 +80,7 @@ export async function runSyncSales(seasonSlugArg?: string) {
     let written = 0;
     let skippedNoTeam = 0;
     let skippedUnusable = 0;
+    let skippedSbsTwin = 0;
     let loggedSample = false;
 
     do {
@@ -117,6 +119,23 @@ export async function runSyncSales(seasonSlugArg?: string) {
           continue;
         }
 
+        // Trades made on SBS's own marketplace also show up in OpenSea's
+        // feed; syncSbsTrades.ts already records those (see saleDedupe.ts).
+        const txHash = typeof e.transaction === "string" ? e.transaction : null;
+        if (
+          await hasSbsTwin({
+            seasonSlug: season.slug,
+            teamCardId: cardId,
+            fromWallet: e.seller.toLowerCase(),
+            toWallet: e.buyer.toLowerCase(),
+            occurredAt: new Date(occurredAtSec * 1000),
+            txHash,
+          })
+        ) {
+          skippedSbsTwin++;
+          continue;
+        }
+
         const priceEth =
           e.payment && e.payment.decimals != null && e.payment.quantity != null
             ? Number(e.payment.quantity) / 10 ** e.payment.decimals
@@ -129,7 +148,7 @@ export async function runSyncSales(seasonSlugArg?: string) {
             seasonSlug: season.slug,
             teamCardId: cardId,
             occurredAt: new Date(occurredAtSec * 1000),
-            txHash: typeof e.transaction === "string" ? e.transaction : null,
+            txHash,
             fromWallet: e.seller.toLowerCase(),
             toWallet: e.buyer.toLowerCase(),
             priceEth,
@@ -145,7 +164,7 @@ export async function runSyncSales(seasonSlugArg?: string) {
     } while (cursor);
 
     log(
-      `[sync-sales] done: wrote ${written}, skipped ${skippedNoTeam} (team not synced yet), skipped ${skippedUnusable} (unusable event)`,
+      `[sync-sales] done: wrote ${written}, skipped ${skippedNoTeam} (team not synced yet), skipped ${skippedUnusable} (unusable event), skipped ${skippedSbsTwin} (already recorded as an SBS-marketplace trade)`,
     );
     await prisma.syncLog.update({
       where: { id: syncLogRow.id },

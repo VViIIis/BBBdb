@@ -1,5 +1,6 @@
 import { writeSync } from "fs";
 import { prisma } from "@/lib/db";
+import { removeOpenSeaTwins } from "@/lib/saleDedupe";
 import { getWalletMarketplaceActivity, SbsMarketplaceActivity } from "@/lib/sbsApi";
 
 // Same rationale as syncLeaderboard.ts: writeSync bypasses stdout buffering
@@ -142,8 +143,13 @@ export async function runSyncSbsTrades() {
       written++;
     }
 
+    // Drop the OpenSea copies of these trades — OpenSea indexes SBS's
+    // marketplace fills too, so syncSales.ts may have recorded them first.
+    // Also cleans up the duplicates recorded before 2026-10-08. See saleDedupe.ts.
+    const removedTwins = await removeOpenSeaTwins(season.slug);
     log(
-      `[sync-sbs-trades] done: wrote ${written}, skipped ${skippedNoTeam} (team not synced yet), skipped ${skippedUnusable} (unusable event)`,
+      `[sync-sbs-trades] done: wrote ${written}, skipped ${skippedNoTeam} (team not synced yet), skipped ${skippedUnusable} (unusable event), ` +
+        `removed ${removedTwins} duplicate OpenSea copies of SBS trades`,
     );
     await prisma.syncLog.update({
       where: { id: syncLogRow.id },
