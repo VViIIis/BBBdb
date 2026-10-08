@@ -103,15 +103,6 @@ export default async function LeaderboardPage({
     ? searchParams.level
     : "all";
 
-  // Defaults to Weekly rather than Season: with SBS's weekly top-5 cash
-  // prizes now live (see WEEKLY_PRIZES below), Weekly score is the number
-  // that actually matters day-to-day, so it's what the leaderboard should
-  // open on rather than requiring a click.
-  const sortKey: SortKey = isSortKey(searchParams.sort) ? searchParams.sort : "weekly";
-  const dir: "asc" | "desc" = searchParams.dir === "asc" || searchParams.dir === "desc"
-    ? searchParams.dir
-    : SORT_COLUMNS[sortKey].defaultDir;
-
   // Query-string builder for a clickable column header: clicking the
   // already-active column flips its direction, clicking a different column
   // switches to that column's own default direction. Preserves level/season
@@ -177,16 +168,29 @@ export default async function LeaderboardPage({
   // is what real money rides on (see WEEKLY_PRIZES above), so it has to
   // reflect the actual full field, not just whichever subset of rows
   // happens to be on screen right now.
-  const weeklyTop5 =
-    weeklyPrizesActive && gameweek
-      ? await prisma.scoreSnapshot.findMany({
-          where: { seasonSlug: season.slug, gameweek },
-          orderBy: { weeklyScore: "desc" },
-          take: 5,
-          select: { teamCardId: true },
-        })
-      : [];
+  const weekTop5 = gameweek
+    ? await prisma.scoreSnapshot.findMany({
+        where: { seasonSlug: season.slug, gameweek },
+        orderBy: { weeklyScore: "desc" },
+        take: 5,
+        select: { teamCardId: true, weeklyScore: true },
+      })
+    : [];
+  // Tue-Thu before kickoff the new week exists but every Weekly score is
+  // still 0 — nothing to rank or award yet.
+  const weekHasScores = (weekTop5[0]?.weeklyScore ?? 0) > 0;
+  const weeklyTop5 = weeklyPrizesActive ? weekTop5.filter((r) => r.weeklyScore > 0) : [];
   const weeklyPrizeRank = new Map(weeklyTop5.map((r, i) => [r.teamCardId, i + 1]));
+
+  // Defaults to Weekly (the weekly top-5 cash prizes make it the number that
+  // matters day-to-day) once the week has scores; between weeks, before
+  // kickoff, when every Weekly score is 0, it opens on Season instead.
+  const sortKey: SortKey = isSortKey(searchParams.sort)
+    ? searchParams.sort
+    : weekHasScores ? "weekly" : "season";
+  const dir: "asc" | "desc" = searchParams.dir === "asc" || searchParams.dir === "desc"
+    ? searchParams.dir
+    : SORT_COLUMNS[sortKey].defaultDir;
 
   // Links for the week picker keep the level/sort the viewer already chose.
   function weekHref(week: string | null) {
