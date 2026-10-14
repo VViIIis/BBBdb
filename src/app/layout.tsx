@@ -27,10 +27,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </a>
             {/* Ordered by real usage (Vercel Analytics, Sep 2026): Leaderboard, then
                 Search (2nd most-visited, but its box only lives on the leaderboard),
-                Advancement, Exposure, Most Teams, Stats, Scores, Trades. */}
+                Advancement, Exposure, Most Teams, Stats, Scores, Trades. Winnings (added
+                Oct 2026) sits next to Leaderboard since it's the weekly-prize companion. */}
             <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-zinc-400">
               <a href="/" className="hover:text-banana-400">
                 Leaderboard
+              </a>
+              <a href="/winnings" className="hover:text-banana-400">
+                Winnings
               </a>
               <a href="/search" className="hover:text-banana-400">
                 Search

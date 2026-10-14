@@ -7,6 +7,7 @@ import SeasonTabs from "@/components/SeasonTabs";
 import { KNOWN_LEVELS } from "@/lib/sbsApi";
 import { getAllSeasons, resolveSeason } from "@/lib/seasons";
 import { getPodRanks, podRankByCardId, ordinal, PodKey } from "@/lib/advancement";
+import { WEEKLY_PRIZES, weekNumberOf } from "@/lib/winnings";
 
 export const dynamic = "force-dynamic"; // always read latest synced data, never cache stale scores
 
@@ -14,12 +15,6 @@ function shortWallet(wallet: string) {
   return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 }
 
-// "2026REG-03" -> 3. Anything else (e.g. an imported "bbb3-final"
-// snapshot, see schema.prisma) has no week number -> null.
-function weekNumberOf(gameweek: string): number | null {
-  const m = gameweek.match(/^\d{4}REG-(\d+)$/);
-  return m ? Number(m[1]) : null;
-}
 
 // Sortable columns. `rank` defaults ascending (1 = best), Weekly/Season
 // default descending (highest score first) — each column remembers its own
@@ -41,7 +36,7 @@ function isSortKey(v: string | undefined): v is SortKey {
 // figure), active weeks 1-14 only — week 15+ is Hall of Fame/finals
 // territory with its own separate payout structure, not this one. Index 0 =
 // 1st place.
-const WEEKLY_PRIZES = [250, 100, 50, 35, 20];
+// (WEEKLY_PRIZES itself now lives in src/lib/winnings.ts, shared with /winnings.)
 // Graduated badge intensity so 1st stands out most and 5th least, without
 // introducing five arbitrary new colors into a palette that's otherwise just
 // banana-400 + ink/zinc everywhere else on the site.
@@ -262,7 +257,10 @@ export default async function LeaderboardPage({
           {weeklyPrizesActive && (
             <p className="mt-1 text-xs text-zinc-500">
               🏆 This week&rsquo;s top 5 by Weekly score win real cash — $
-              {WEEKLY_PRIZES.join(" / $")} (SBS&rsquo;s payout table, weeks 1–14).
+              {WEEKLY_PRIZES.join(" / $")} (SBS&rsquo;s payout table, weeks 1–14).{" "}
+              <Link href="/winnings" className="text-zinc-400 underline hover:text-banana-400">
+                Who&rsquo;s won the most →
+              </Link>
             </p>
           )}
         </div>
