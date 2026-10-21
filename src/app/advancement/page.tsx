@@ -52,7 +52,7 @@ function parseMinTeams(v: string | undefined): number {
 export default async function AdvancementPage({
   searchParams,
 }: {
-  searchParams: { season?: string; sort?: string; dir?: string; minTeams?: string };
+  searchParams: { season?: string; sort?: string; dir?: string; minTeams?: string; q?: string };
 }) {
   const [season, seasons] = await Promise.all([
     resolveSeason(searchParams.season),
@@ -65,6 +65,8 @@ export default async function AdvancementPage({
       ? searchParams.dir
       : SORT_COLUMNS[sortKey].defaultDir;
   const minTeams = searchParams.minTeams === "0" ? 0 : parseMinTeams(searchParams.minTeams);
+  // Owner search: username (partial, any case) or wallet (prefix).
+  const q = (searchParams.q ?? "").trim().slice(0, 64);
 
   function sortHref(column: SortKey) {
     const params = new URLSearchParams();
@@ -76,11 +78,20 @@ export default async function AdvancementPage({
       column === sortKey && dir === defaultDir ? flipDir(defaultDir) : defaultDir,
     );
     if (minTeams !== DEFAULT_MIN_TEAMS) params.set("minTeams", String(minTeams));
+    if (q) params.set("q", q);
     return `/advancement?${params.toString()}`;
   }
   function sortIndicator(column: SortKey) {
     if (column !== sortKey) return null;
     return <span className="ml-1 text-banana-400">{dir === "asc" ? "▲" : "▼"}</span>;
+  }
+  function clearSearchHref() {
+    const params = new URLSearchParams();
+    params.set("season", season.slug);
+    params.set("sort", sortKey);
+    params.set("dir", dir);
+    if (minTeams !== DEFAULT_MIN_TEAMS) params.set("minTeams", String(minTeams));
+    return `/advancement?${params.toString()}`;
   }
   function minTeamsHref(n: number) {
     const params = new URLSearchParams();
@@ -88,6 +99,7 @@ export default async function AdvancementPage({
     params.set("sort", sortKey);
     params.set("dir", dir);
     if (n !== DEFAULT_MIN_TEAMS) params.set("minTeams", String(n));
+    if (q) params.set("q", q);
     return `/advancement?${params.toString()}`;
   }
 
@@ -108,18 +120,39 @@ export default async function AdvancementPage({
   // other page. This is the one place in the app that does this; see
   // getPodRanks()'s own comment.
   const podRanks = await getPodRanks(season.slug);
-  const rankedAll: OwnerAdvancement[] = rollupByOwner(podRanks).filter(
-    (r) => r.scoredTeams > 0 && r.scoredTeams >= minTeams,
-  );
-  const ranked = [...rankedAll]
+  const sortedAll: OwnerAdvancement[] = rollupByOwner(podRanks)
+    .filter((r) => r.scoredTeams > 0)
     .sort((a, b) => {
       const av = sortKey === "rate" ? a.rate ?? -1 : a[sortKey];
       const bv = sortKey === "rate" ? b.rate ?? -1 : b[sortKey];
       return dir === "asc"
         ? av - bv || a.ownerWallet.localeCompare(b.ownerWallet)
         : bv - av || a.ownerWallet.localeCompare(b.ownerWallet);
-    })
-    .slice(0, LIMIT);
+    });
+  const qualified = sortedAll.filter((r) => r.scoredTeams >= minTeams);
+  // An owner's # is their place in the current (min-drafts-filtered) list,
+  // so a search result shows where they'd actually sit.
+  const rankByWallet = new Map(qualified.map((r, i) => [r.ownerWallet.toLowerCase(), i + 1]));
+
+  // Searching ignores the min-drafts filter, so someone with only a few
+  // teams can still find themselves (their # shows "—" if they're below it).
+  let ranked: OwnerAdvancement[];
+  if (q) {
+    const matches = await prisma.owner.findMany({
+      where: {
+        OR: [
+          { displayName: { contains: q, mode: "insensitive" } },
+          { wallet: { startsWith: q, mode: "insensitive" } },
+        ],
+      },
+      select: { wallet: true },
+      take: 500,
+    });
+    const matchSet = new Set(matches.map((m) => m.wallet.toLowerCase()));
+    ranked = sortedAll.filter((r) => matchSet.has(r.ownerWallet.toLowerCase())).slice(0, LIMIT);
+  } else {
+    ranked = qualified.slice(0, LIMIT);
+  }
 
   const owners = await prisma.owner.findMany({
     where: { wallet: { in: ranked.map((r) => r.ownerWallet) } },
@@ -149,9 +182,39 @@ export default async function AdvancementPage({
             sort: sortKey,
             dir,
             minTeams: minTeams !== DEFAULT_MIN_TEAMS ? String(minTeams) : undefined,
+            q: q || undefined,
           }}
         />
       </div>
+
+      <form action="/advancement" method="GET" className="mb-3 flex gap-2 sm:w-80">
+        <input type="hidden" name="season" value={season.slug} />
+        {sortKey !== "rate" && <input type="hidden" name="sort" value={sortKey} />}
+        {dir !== SORT_COLUMNS[sortKey].defaultDir && <input type="hidden" name="dir" value={dir} />}
+        {minTeams !== DEFAULT_MIN_TEAMS && <input type="hidden" name="minTeams" value={String(minTeams)} />}
+        <input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Find a user or wallet..."
+          className="w-full rounded-lg border border-ink-600 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-banana-400"
+        />
+        <button
+          type="submit"
+          className="rounded-lg bg-banana-400 px-3 py-2 shrink-0 text-sm font-semibold text-ink-900 hover:bg-banana-500"
+        >
+          Search
+        </button>
+      </form>
+      {q && (
+        <p className="mb-3 text-sm text-zinc-400">
+          {ranked.length === 0 ? "No owners" : `${ranked.length} owner${ranked.length === 1 ? "" : "s"}`}{" "}
+          matching &ldquo;{q}&rdquo; ·{" "}
+          <Link href={clearSearchHref()} className="text-banana-400 hover:underline">
+            clear search
+          </Link>
+        </p>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="text-sm text-zinc-400">Min drafts:</span>
@@ -207,7 +270,16 @@ export default async function AdvancementPage({
               const owner = ownerByWallet.get(r.ownerWallet);
               return (
                 <tr key={r.ownerWallet} className="border-t border-ink-600 hover:bg-ink-800/60">
-                  <td className="px-2 py-2 sm:px-3 text-zinc-400">{i + 1}</td>
+                  <td
+                    className="px-2 py-2 sm:px-3 text-zinc-400"
+                    title={
+                      rankByWallet.has(r.ownerWallet.toLowerCase())
+                        ? undefined
+                        : `Below the ${minTeams}+ drafts filter`
+                    }
+                  >
+                    {q ? rankByWallet.get(r.ownerWallet.toLowerCase()) ?? "—" : i + 1}
+                  </td>
                   <td className="px-2 py-2 sm:px-3">
                     <Link href={`/owner/${r.ownerWallet}`} className="flex items-center gap-2 hover:text-banana-400">
                       <OwnerAvatar imageUrl={owner?.imageUrl} />
@@ -227,7 +299,9 @@ export default async function AdvancementPage({
             {ranked.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-3 py-8 text-center text-zinc-500">
-                  {minTeams > 0
+                  {q
+                    ? `No owners matching "${q}" with scored teams in ${season.name}.`
+                    : minTeams > 0
                     ? `No owners with ${minTeams}+ scored teams yet for ${season.name}.`
                     : `No scored teams yet for ${season.name}.`}
                 </td>
